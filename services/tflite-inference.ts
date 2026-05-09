@@ -638,18 +638,76 @@ function extractRoiBySkinMask(rgb: Float32Array, width: number, height: number):
   }
 
   const pad = 15;
-  const minX = Math.max(0, best.minX - pad);
-  const minY = Math.max(0, best.minY - pad);
-  const maxX = Math.min(width - 1, best.maxX + pad);
-  const maxY = Math.min(height - 1, best.maxY + pad);
-  const roiW = Math.max(1, maxX - minX + 1);
-  const roiH = Math.max(1, maxY - minY + 1);
-  const roi = new Float32Array(roiW * roiH * 3);
+  const skinMinX = Math.max(0, best.minX - pad);
+  const skinMinY = Math.max(0, best.minY - pad);
+  const skinMaxX = Math.min(width - 1, best.maxX + pad);
+  const skinMaxY = Math.min(height - 1, best.maxY + pad);
+  const skinW = Math.max(1, skinMaxX - skinMinX + 1);
+  const skinH = Math.max(1, skinMaxY - skinMinY + 1);
 
-  for (let y = 0; y < roiH; y++) {
-    for (let x = 0; x < roiW; x++) {
-      const src = ((minY + y) * width + (minX + x)) * 3;
-      const dst = (y * roiW + x) * 3;
+  // --- Narrow from "skin region" to "nail region" ---
+  // The skin mask captures the whole finger/hand. The nail is a small,
+  // roughly rectangular area that typically sits in the upper-center of the
+  // finger. We estimate the nail's position by taking approximately the
+  // top 45% vertically and center 65% horizontally of the skin bounding box.
+  // This produces a tight crop that closely matches the training data
+  // (close-up nail images).
+  const skinAspect = skinW / skinH;
+  const skinAreaRatio = (skinW * skinH) / imageArea;
+
+  // Only apply nail-narrowing if the skin region is large enough that it
+  // likely contains more than just the nail (i.e. includes finger/hand skin).
+  // If the skin region is already small (<20% of the image), the user has
+  // likely already framed the nail tightly and we should not over-crop.
+  let nailMinX: number;
+  let nailMinY: number;
+  let nailW: number;
+  let nailH: number;
+
+  if (skinAreaRatio > 0.25) {
+    // Large skin region detected – narrow down to estimated nail area
+    const narrowHorizontal = 0.65;  // use center 65% of width
+    
+    const horzInset = skinW * ((1 - narrowHorizontal) / 2);
+    nailMinX = Math.max(0, Math.round(skinMinX + horzInset));
+    nailW = Math.max(1, Math.round(skinW * narrowHorizontal));
+
+    if (skinAspect > 1.3) {
+      // Finger appears to be horizontal – nail could be at either end.
+      // Use center crop vertically.
+      const vertInset = skinH * ((1 - 0.70) / 2);
+      nailMinY = Math.max(0, Math.round(skinMinY + vertInset));
+      nailH = Math.max(1, Math.round(skinH * 0.70));
+    } else {
+      // Finger is vertical or roughly square.
+      // Take the middle 70% of the skin bounding box, but shift it upwards
+      // by 10% since the nail is on the distal half. This safely captures the nail
+      // whether it is centered in the camera frame or at the very tip of a finger.
+      const narrowVertical = 0.70;
+      const vertInset = skinH * ((1 - narrowVertical) / 2);
+      const shiftUp = skinH * 0.10;
+      nailMinY = Math.max(skinMinY, Math.round(skinMinY + vertInset - shiftUp));
+      nailH = Math.max(1, Math.round(skinH * narrowVertical));
+    }
+  } else {
+    // Small/moderate skin region – use the full skin bounding box
+    nailMinX = skinMinX;
+    nailMinY = skinMinY;
+    nailW = skinW;
+    nailH = skinH;
+  }
+
+  // Clamp to image bounds
+  nailMinX = Math.max(0, Math.min(width - 1, nailMinX));
+  nailMinY = Math.max(0, Math.min(height - 1, nailMinY));
+  nailW = Math.min(nailW, width - nailMinX);
+  nailH = Math.min(nailH, height - nailMinY);
+
+  const roi = new Float32Array(nailW * nailH * 3);
+  for (let y = 0; y < nailH; y++) {
+    for (let x = 0; x < nailW; x++) {
+      const src = ((nailMinY + y) * width + (nailMinX + x)) * 3;
+      const dst = (y * nailW + x) * 3;
       roi[dst] = rgb[src];
       roi[dst + 1] = rgb[src + 1];
       roi[dst + 2] = rgb[src + 2];
@@ -657,8 +715,8 @@ function extractRoiBySkinMask(rgb: Float32Array, width: number, height: number):
   }
 
   return {
-    rgb: resizeRgbBilinear(roi, roiW, roiH, width, height),
-    roi: { x: minX, y: minY, width: roiW, height: roiH }
+    rgb: resizeRgbBilinear(roi, nailW, nailH, width, height),
+    roi: { x: nailMinX, y: nailMinY, width: nailW, height: nailH }
   };
 }
 
