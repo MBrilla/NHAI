@@ -1240,8 +1240,8 @@ async function preprocessNativeImageToRgb(
     // Fallback if needed, but usually we can get size.
   }
 
-  const normalizedUri = isDataUri ? imageUri : imageUri.split('?')[0];
-  const isJpegUri = isDataUri ? /^data:image\/jpe?g/i.test(normalizedUri) : /\.(jpe?g)$/i.test(normalizedUri);
+  const baseUri = isDataUri ? imageUri : imageUri.split('?')[0];
+  const isJpegUri = isDataUri ? /^data:image\/jpe?g/i.test(baseUri) : /\.(jpe?g)$/i.test(baseUri);
   const hasDimensions = originalWidth > 0 && originalHeight > 0;
   const pixelCount = hasDimensions ? originalWidth * originalHeight : 0;
   const shouldResizeFirst =
