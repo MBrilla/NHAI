@@ -1232,9 +1232,15 @@ async function preprocessNativeImageToRgb(
   }
 
   const normalizedUri = imageUri.split('?')[0];
-  const isJpegUri = /\.(jpe?g)$/i.test(normalizedUri);
-  const pixelCount = originalWidth > 0 && originalHeight > 0 ? originalWidth * originalHeight : 0;
-  const shouldResizeFirst = !isJpegUri || (pixelCount > 0 && pixelCount > MAX_DIRECT_DECODE_PIXELS);
+  const isDataUri = normalizedUri.startsWith('data:');
+  const isJpegUri = isDataUri ? /^data:image\/jpe?g/i.test(normalizedUri) : /\.(jpe?g)$/i.test(normalizedUri);
+  const hasDimensions = originalWidth > 0 && originalHeight > 0;
+  const pixelCount = hasDimensions ? originalWidth * originalHeight : 0;
+  const shouldResizeFirst =
+    isDataUri ||
+    !isJpegUri ||
+    !hasDimensions ||
+    (pixelCount > 0 && pixelCount > MAX_DIRECT_DECODE_PIXELS);
 
   if (shouldResizeFirst) {
     decoded = await needsResize();
