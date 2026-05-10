@@ -82,6 +82,7 @@ let runtimeMode: TfliteRuntimeMode = 'native-fallback';
 let singleModelMode = !ENSEMBLING_ENABLED;
 let isWarmedUp = false;
 const MAX_MEMORY_MB = 200; // Threshold for OOM safeguard
+const MAX_DIRECT_DECODE_PIXELS = 6_000_000;
 let memoryWarningCount = 0;
 
 function getModelInputSize(): number {
@@ -1230,14 +1231,23 @@ async function preprocessNativeImageToRgb(
     // Fallback if needed, but usually we can get size.
   }
 
-  try {
-    // Try reading directly first – avoids an extra encode/decode cycle.
-    decoded = await readDirect();
-    if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
+  const normalizedUri = imageUri.split('?')[0];
+  const isJpegUri = /\.(jpe?g)$/i.test(normalizedUri);
+  const pixelCount = originalWidth > 0 && originalHeight > 0 ? originalWidth * originalHeight : 0;
+  const shouldResizeFirst = !isJpegUri || (pixelCount > 0 && pixelCount > MAX_DIRECT_DECODE_PIXELS);
+
+  if (shouldResizeFirst) {
+    decoded = await needsResize();
+  } else {
+    try {
+      // Try reading directly first – avoids an extra encode/decode cycle.
+      decoded = await readDirect();
+      if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
+        decoded = await needsResize();
+      }
+    } catch {
       decoded = await needsResize();
     }
-  } catch {
-    decoded = await needsResize();
   }
 
   if (originalWidth === 0) {
