@@ -1240,7 +1240,7 @@ async function preprocessNativeImageToRgb(
     isDataUri ||
     !isJpegUri ||
     !hasDimensions ||
-    (pixelCount > 0 && pixelCount > MAX_DIRECT_DECODE_PIXELS);
+    pixelCount > MAX_DIRECT_DECODE_PIXELS;
 
   if (shouldResizeFirst) {
     decoded = await needsResize();
