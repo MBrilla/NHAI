@@ -1195,6 +1195,7 @@ async function preprocessNativeImageToRgb(
   let decodedHeight: number;
   let rgb: Uint8Array;
 
+  const isDataUri = imageUri.startsWith('data:');
   const needsResize = async () => {
     const resized = await manipulateAsync(
       imageUri,
@@ -1208,6 +1209,14 @@ async function preprocessNativeImageToRgb(
   };
 
   const readDirect = async () => {
+    if (isDataUri) {
+      const commaIndex = imageUri.indexOf(',');
+      if (commaIndex === -1) {
+        throw new Error('Invalid data URI');
+      }
+      const base64Payload = imageUri.slice(commaIndex + 1);
+      return jpeg.decode(toByteArray(base64Payload), { useTArray: true });
+    }
     const b64 = await FileSystem.readAsStringAsync(imageUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
@@ -1231,16 +1240,14 @@ async function preprocessNativeImageToRgb(
     // Fallback if needed, but usually we can get size.
   }
 
-  const normalizedUri = imageUri.split('?')[0];
-  const isDataUri = normalizedUri.startsWith('data:');
+  const normalizedUri = isDataUri ? imageUri : imageUri.split('?')[0];
   const isJpegUri = isDataUri ? /^data:image\/jpe?g/i.test(normalizedUri) : /\.(jpe?g)$/i.test(normalizedUri);
   const hasDimensions = originalWidth > 0 && originalHeight > 0;
   const pixelCount = hasDimensions ? originalWidth * originalHeight : 0;
   const shouldResizeFirst =
-    isDataUri ||
     !isJpegUri ||
-    !hasDimensions ||
-    pixelCount > MAX_DIRECT_DECODE_PIXELS;
+    (!isDataUri && !hasDimensions) ||
+    (!isDataUri && pixelCount > MAX_DIRECT_DECODE_PIXELS);
 
   if (shouldResizeFirst) {
     decoded = await needsResize();
@@ -1248,7 +1255,7 @@ async function preprocessNativeImageToRgb(
     try {
       // Try reading directly first – avoids an extra encode/decode cycle.
       decoded = await readDirect();
-      if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
+      if (!isDataUri && (decoded.width !== modelInputSize || decoded.height !== modelInputSize)) {
         decoded = await needsResize();
       }
     } catch {
