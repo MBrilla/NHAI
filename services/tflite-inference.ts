@@ -1246,8 +1246,8 @@ async function preprocessNativeImageToRgb(
   const pixelCount = hasDimensions ? originalWidth * originalHeight : 0;
   const shouldResizeFirst =
     !isJpegUri ||
-    (!isDataUri && !hasDimensions) ||
-    (!isDataUri && pixelCount > MAX_DIRECT_DECODE_PIXELS);
+    !hasDimensions ||
+    pixelCount > MAX_DIRECT_DECODE_PIXELS;
 
   if (shouldResizeFirst) {
     decoded = await needsResize();
@@ -1255,7 +1255,7 @@ async function preprocessNativeImageToRgb(
     try {
       // Try reading directly first – avoids an extra encode/decode cycle.
       decoded = await readDirect();
-      if (!isDataUri && (decoded.width !== modelInputSize || decoded.height !== modelInputSize)) {
+      if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
         decoded = await needsResize();
       }
     } catch {
