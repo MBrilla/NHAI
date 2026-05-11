@@ -82,6 +82,7 @@ let runtimeMode: TfliteRuntimeMode = 'native-fallback';
 let singleModelMode = !ENSEMBLING_ENABLED;
 let isWarmedUp = false;
 const MAX_MEMORY_MB = 200; // Threshold for OOM safeguard
+const MAX_DIRECT_DECODE_PIXELS = 6_000_000;
 let memoryWarningCount = 0;
 
 function getModelInputSize(): number {
@@ -1194,6 +1195,7 @@ async function preprocessNativeImageToRgb(
   let decodedHeight: number;
   let rgb: Uint8Array;
 
+  const isDataUri = imageUri.startsWith('data:');
   const needsResize = async () => {
     const resized = await manipulateAsync(
       imageUri,
@@ -1207,6 +1209,14 @@ async function preprocessNativeImageToRgb(
   };
 
   const readDirect = async () => {
+    if (isDataUri) {
+      const commaIndex = imageUri.indexOf(',');
+      if (commaIndex === -1) {
+        throw new Error('Invalid data URI');
+      }
+      const base64Payload = imageUri.slice(commaIndex + 1);
+      return jpeg.decode(toByteArray(base64Payload), { useTArray: true });
+    }
     const b64 = await FileSystem.readAsStringAsync(imageUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
@@ -1230,14 +1240,27 @@ async function preprocessNativeImageToRgb(
     // Fallback if needed, but usually we can get size.
   }
 
-  try {
-    // Try reading directly first – avoids an extra encode/decode cycle.
-    decoded = await readDirect();
-    if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
+  const baseUri = isDataUri ? imageUri : imageUri.split('?')[0];
+  const isJpegUri = isDataUri ? /^data:image\/jpe?g/i.test(baseUri) : /\.(jpe?g)$/i.test(baseUri);
+  const hasDimensions = originalWidth > 0 && originalHeight > 0;
+  const pixelCount = hasDimensions ? originalWidth * originalHeight : 0;
+  const shouldResizeFirst =
+    !isJpegUri ||
+    !hasDimensions ||
+    pixelCount > MAX_DIRECT_DECODE_PIXELS;
+
+  if (shouldResizeFirst) {
+    decoded = await needsResize();
+  } else {
+    try {
+      // Try reading directly first – avoids an extra encode/decode cycle.
+      decoded = await readDirect();
+      if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
+        decoded = await needsResize();
+      }
+    } catch {
       decoded = await needsResize();
     }
-  } catch {
-    decoded = await needsResize();
   }
 
   if (originalWidth === 0) {

@@ -83,7 +83,7 @@ const photo = await cameraRef.current?.takePictureAsync({ quality: 0.92, skipPro
 if (photo?.uri) {
   try {
     if (photo.width && photo.height) {
-      const cropped = await cropToGuideRoi(photo.uri, photo.width, photo.height);
+      const cropped = await cropToGuideRoi(photo.uri, photo.width, photo.height, previewLayout);
       setCapturedUri(cropped.uri);
     } else {
       setCapturedUri(photo.uri);
