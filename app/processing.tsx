@@ -13,6 +13,7 @@ import {
     type TfliteRuntimeMode,
 } from '@/services/tflite-inference';
 import { addScanHistoryEntry } from '@/services/scan-history';
+import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
 
 const INFERENCE_TIMEOUT_MS = 25000;
 
@@ -121,7 +122,7 @@ export default function ProcessingScreen() {
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={20} color="#06245C" />
           </Pressable>
-          <Text style={styles.headerTitle}>Nail Capture</Text>
+          <Text style={styles.headerTitle}>Diagnosis</Text>
         </View>
 
         <View style={styles.content}>
@@ -144,7 +145,7 @@ export default function ProcessingScreen() {
           <Text style={styles.phaseText}>{phaseText}</Text>
           <Text style={styles.waitText}>Please wait while NailScan processes your image</Text>
           
-          <Ionicons name="hourglass-outline" size={48} color="#0B55C7" style={styles.hourGlass} />
+          <Ionicons name="hourglass-outline" size={moderateScale(42)} color="#0B55C7" style={styles.hourGlass} />
         </View>
       </View>
     </ScreenShell>
@@ -158,13 +159,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 10,
-    height: 52,
+    paddingTop: verticalScale(5),
+    height: verticalScale(52),
   },
   backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(16),
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.72)',
@@ -173,62 +174,62 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 21,
+    fontSize: scaleFont(21),
     fontWeight: '900',
     color: '#071F55',
     textAlign: 'center',
-    marginRight: 42,
+    marginRight: moderateScale(42),
   },
   content: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 40,
+    paddingBottom: verticalScale(40),
   },
   title: {
-    fontSize: 32,
+    fontSize: scaleFont(30),
     fontWeight: '900',
     color: '#071F55',
     textAlign: 'center',
     letterSpacing: -0.7,
   },
   subtitle: {
-    fontSize: 15.5,
+    fontSize: scaleFont(15),
     fontWeight: '600',
     color: '#23416F',
     textAlign: 'center',
-    marginTop: 14,
-    paddingHorizontal: 20,
+    marginTop: verticalScale(14),
+    paddingHorizontal: scale(20),
   },
   ringContainer: {
-    width: 210,
-    height: 210,
+    width: moderateScale(200),
+    height: moderateScale(200),
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 40,
+    marginVertical: verticalScale(30),
   },
   ring: {
-    width: 210,
-    height: 210,
-    borderRadius: 105,
+    width: moderateScale(200),
+    height: moderateScale(200),
+    borderRadius: moderateScale(100),
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
     borderStyle: 'dotted',
     position: 'absolute',
   },
   ringDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: moderateScale(12),
+    height: moderateScale(12),
+    borderRadius: moderateScale(6),
     backgroundColor: '#0B5CFF',
     position: 'absolute',
     top: -6,
-    left: 100,
+    left: moderateScale(94),
   },
   logoBox: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: moderateScale(140),
+    height: moderateScale(140),
+    borderRadius: moderateScale(70),
     backgroundColor: 'rgba(255, 255, 255, 0.22)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -239,24 +240,25 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   logo: {
-    width: 86,
-    height: 86,
+    width: moderateScale(80),
+    height: moderateScale(80),
   },
   phaseText: {
-    fontSize: 18,
+    fontSize: scaleFont(18),
     fontWeight: '800',
     color: '#071F55',
-    marginTop: 20,
+    marginTop: verticalScale(10),
   },
   waitText: {
-    fontSize: 16,
+    fontSize: scaleFont(15),
     fontWeight: '600',
     color: '#143875',
     textAlign: 'center',
-    marginTop: 10,
+    marginTop: verticalScale(8),
   },
   hourGlass: {
-    marginTop: 22,
+    marginTop: verticalScale(20),
   },
 });
+
 

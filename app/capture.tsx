@@ -2,17 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { GlassView } from '@/components/nailscan/glass-view';
 import * as ImagePicker from 'expo-image-picker';
+import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
 
 const GUIDE_FRAME_WIDTH_RATIO = 0.45;
 const GUIDE_FRAME_HEIGHT_RATIO = 0.65;
 
 export default function CaptureScreen() {
   const router = useRouter();
+  const { height: screenHeight } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -41,9 +43,6 @@ export default function CaptureScreen() {
       try {
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.92, skipProcessing: false });
         if (!photo?.uri) return;
-        // Pass full-resolution image to inference; the inference service
-        // handles all ROI extraction and preprocessing to match the
-        // training pipeline exactly.
         setCapturedImage(photo.uri);
       } catch (err) {
         console.error("Capture error:", err);
@@ -76,6 +75,9 @@ export default function CaptureScreen() {
     }
   };
 
+  // Adjust layout for shorter screens
+  const isTallScreen = screenHeight > 800;
+
   return (
     <ScreenShell variant="default">
       <View style={styles.container}>
@@ -90,7 +92,7 @@ export default function CaptureScreen() {
         {/* Tips Card */}
         <GlassView style={styles.tipsCard} intensity={62}>
           <View style={styles.tipsHeader}>
-            <Ionicons name="sparkles" size={20} color="#086BFF" />
+            <Ionicons name="sparkles" size={moderateScale(20)} color="#086BFF" />
             <Text style={styles.tipsTitle}>For better scan results:</Text>
           </View>
           <View style={styles.tipsRow}>
@@ -105,7 +107,7 @@ export default function CaptureScreen() {
         </GlassView>
 
         {/* Camera Preview */}
-        <View style={styles.previewContainer}>
+        <View style={[styles.previewContainer, !isTallScreen && { marginVertical: 6 }]}>
           <GlassView style={styles.previewBorder} intensity={16}>
             <View style={styles.cameraBox}>
               {!capturedImage ? (
@@ -118,7 +120,6 @@ export default function CaptureScreen() {
                   <Pressable 
                     style={styles.overlay} 
                     onPress={() => {
-                      // Manual refocus on tap
                       setAutoFocus('off');
                       setTimeout(() => setAutoFocus('on'), 100);
                     }}
@@ -138,7 +139,7 @@ export default function CaptureScreen() {
                       >
                         <Ionicons 
                           name={flashEnabled ? "flash" : "flash-off"} 
-                          size={24} 
+                          size={moderateScale(24)} 
                           color="white" 
                         />
                         <Text style={styles.controlBtnText}>Flash</Text>
@@ -166,7 +167,7 @@ export default function CaptureScreen() {
           >
             <Ionicons 
               name={capturedImage ? "analytics" : "camera"} 
-              size={24} 
+              size={moderateScale(24)} 
               color="white" 
             />
             <View style={styles.actionTextCol}>
@@ -181,7 +182,7 @@ export default function CaptureScreen() {
           >
             <Ionicons 
               name={capturedImage ? "refresh" : "cloud-upload"} 
-              size={24} 
+              size={moderateScale(24)} 
               color="#0B2E6F" 
             />
             <View style={styles.actionTextCol}>
@@ -199,7 +200,7 @@ function TipItem({ icon, label }: { icon: any, label: string }) {
   return (
     <View style={styles.tipItem}>
       <View style={styles.tipIconBox}>
-        <Ionicons name={icon} size={20} color="#086BFF" />
+        <Ionicons name={icon} size={moderateScale(20)} color="#086BFF" />
       </View>
       <Text style={styles.tipLabel}>{label}</Text>
     </View>
@@ -213,13 +214,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 10,
-    height: 52,
+    paddingTop: verticalScale(5),
+    height: verticalScale(52),
   },
   headerIconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(16),
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.72)',
@@ -228,27 +229,27 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 21,
+    fontSize: scaleFont(21),
     fontWeight: '900',
     color: '#071F55',
     textAlign: 'center',
-    marginRight: 42,
+    marginRight: moderateScale(42),
     letterSpacing: -0.5,
   },
   tipsCard: {
-    marginTop: 10,
-    padding: 12,
+    marginTop: verticalScale(10),
+    padding: scale(12),
   },
   tipsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: verticalScale(10),
   },
   tipsTitle: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontWeight: '900',
     color: '#086BFF',
-    marginLeft: 8,
+    marginLeft: scale(8),
   },
   tipsRow: {
     flexDirection: 'row',
@@ -260,28 +261,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tipIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(14),
     backgroundColor: 'rgba(232, 243, 255, 0.95)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   tipLabel: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontWeight: '800',
     color: '#071F55',
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: verticalScale(6),
   },
   divider: {
     width: 1,
-    height: 50,
+    height: verticalScale(50),
     backgroundColor: 'rgba(185, 217, 255, 0.5)',
   },
   previewContainer: {
     flex: 1,
-    marginVertical: 10,
+    marginVertical: verticalScale(10),
   },
   previewBorder: {
     flex: 1,
@@ -289,7 +290,7 @@ const styles = StyleSheet.create({
   },
   cameraBox: {
     flex: 1,
-    borderRadius: 20,
+    borderRadius: moderateScale(20),
     overflow: 'hidden',
     backgroundColor: '#000',
   },
@@ -303,32 +304,32 @@ const styles = StyleSheet.create({
     height: `${GUIDE_FRAME_HEIGHT_RATIO * 100}%`,
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 100,
+    borderRadius: moderateScale(100),
   },
   guideInstructionBox: {
     position: 'absolute',
-    bottom: 40,
+    bottom: verticalScale(30),
     backgroundColor: 'rgba(28, 45, 74, 0.78)',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: scale(18),
+    paddingVertical: verticalScale(10),
+    borderRadius: moderateScale(20),
     alignItems: 'center',
   },
   guideInstructionText: {
     color: 'white',
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontWeight: '800',
   },
   cameraControls: {
     position: 'absolute',
-    top: 20,
-    right: 15,
-    gap: 15,
+    top: verticalScale(20),
+    right: scale(15),
+    gap: verticalScale(15),
   },
   controlBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: moderateScale(54),
+    height: moderateScale(54),
+    borderRadius: moderateScale(27),
     backgroundColor: 'rgba(28, 45, 74, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -337,9 +338,9 @@ const styles = StyleSheet.create({
   },
   controlBtnText: {
     color: 'white',
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontWeight: '900',
-    marginTop: 2,
+    marginTop: verticalScale(2),
     textTransform: 'uppercase',
   },
   capturedImage: {
@@ -348,16 +349,16 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
+    gap: scale(12),
+    marginBottom: verticalScale(10),
   },
   actionBtn: {
     flex: 1,
-    height: 64,
-    borderRadius: 20,
+    height: moderateScale(66),
+    borderRadius: moderateScale(20),
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: scale(16),
   },
   primaryBtn: {
     backgroundColor: '#0B5CFF',
@@ -368,39 +369,40 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.8)',
   },
   actionTextCol: {
-    marginLeft: 12,
+    marginLeft: scale(12),
   },
   actionTitle: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontWeight: '900',
     color: 'white',
   },
   actionSubtitle: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 2,
+    marginTop: verticalScale(2),
   },
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: scale(20),
   },
   permissionText: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: verticalScale(20),
     color: '#071F55',
   },
   permissionBtn: {
     backgroundColor: '#0B5CFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(12),
   },
   permissionBtnText: {
     color: 'white',
     fontWeight: '700',
   },
 });
+

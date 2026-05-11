@@ -1,16 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { GlassView } from '@/components/nailscan/glass-view';
 import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 import { preloadTfliteModel } from '@/services/tflite-inference';
+import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
 
 export default function HomeScreen() {
   const router = useRouter();
   const colors = useNailScanColors();
+  const { height: screenHeight } = useWindowDimensions();
 
   // Animation refs
   const fadeRef = useRef(new Animated.Value(0)).current;
@@ -41,6 +43,9 @@ export default function HomeScreen() {
     router.push('/capture');
   };
 
+  // Adjust layout based on screen height to avoid pushing button off-screen
+  const isTallScreen = screenHeight > 800;
+
   return (
     <ScreenShell variant="default">
       <Animated.View style={[styles.container, { opacity: fadeRef, transform: [{ translateY: slideRef }] }]}>
@@ -62,7 +67,7 @@ export default function HomeScreen() {
           </GlassView>
         </View>
 
-        <View style={styles.spacer} />
+        <View style={isTallScreen ? styles.spacerLarge : styles.spacerSmall} />
 
         {/* Feature Section */}
         <GlassView style={styles.featureSection} intensity={34}>
@@ -85,18 +90,20 @@ export default function HomeScreen() {
           />
         </GlassView>
 
-        <View style={styles.spacer} />
+        <View style={isTallScreen ? styles.spacerLarge : styles.spacerSmall} />
 
         {/* Start Button */}
-        <Pressable onPress={handleStartDiagnosis} style={styles.startButtonContainer}>
-          <View style={styles.startButton}>
-            <View style={styles.startButtonHighlight} />
-            <View style={styles.startButtonRow}>
-              <Ionicons name="sparkles" size={22} color="white" />
-              <Text style={styles.startButtonText}>Start Scan</Text>
+        <View style={styles.buttonWrapper}>
+          <Pressable onPress={handleStartDiagnosis} style={styles.startButtonContainer}>
+            <View style={styles.startButton}>
+              <View style={styles.startButtonHighlight} />
+              <View style={styles.startButtonRow}>
+                <Ionicons name="sparkles" size={moderateScale(22)} color="white" />
+                <Text style={styles.startButtonText}>Start Scan</Text>
+              </View>
             </View>
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
       </Animated.View>
     </ScreenShell>
   );
@@ -115,7 +122,7 @@ function FeatureCard({ icon, title, subtitle, showDivider }: FeatureCardProps) {
     <View style={styles.featureCardContainer}>
       <View style={styles.featureCardRow}>
         <View style={styles.featureIconBox}>
-          <Ionicons name={icon as any} size={28} color={colors.primary} />
+          <Ionicons name={icon as any} size={moderateScale(28)} color={colors.primary} />
         </View>
         <View style={styles.featureTextBox}>
           <Text style={styles.featureTitle}>{title}</Text>
@@ -130,8 +137,9 @@ function FeatureCard({ icon, title, subtitle, showDivider }: FeatureCardProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 20,
-    paddingBottom: 52,
+    paddingTop: verticalScale(10),
+    // Increase padding to clear the 68px absolute tab bar + 32px breathing room (Global fix)
+    paddingBottom: verticalScale(100),
   },
   header: {
     flexDirection: 'row',
@@ -140,31 +148,31 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
-    paddingRight: 14,
+    paddingRight: scale(14),
   },
   title: {
-    fontSize: 34,
+    fontSize: scaleFont(34),
     fontWeight: '900',
     color: '#0A2A66',
     letterSpacing: -0.7,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: scaleFont(18),
     fontWeight: '700',
     color: '#46639A',
-    marginTop: 3,
+    marginTop: verticalScale(3),
   },
   description: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: scaleFont(16),
+    lineHeight: verticalScale(22),
     fontWeight: '600',
     color: '#5F79A6',
-    marginTop: 12,
+    marginTop: verticalScale(12),
   },
   logoBox: {
-    width: 62,
-    height: 62,
-    padding: 9,
+    width: moderateScale(62),
+    height: moderateScale(62),
+    padding: moderateScale(9),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -172,13 +180,17 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  spacer: {
+  spacerSmall: {
+    height: verticalScale(20),
+  },
+  spacerLarge: {
     flex: 1,
+    minHeight: verticalScale(20),
   },
   featureSection: {
     width: '100%',
-    paddingHorizontal: 22,
-    paddingVertical: 18,
+    paddingHorizontal: scale(22),
+    paddingVertical: verticalScale(10),
   },
   featureCardContainer: {
     width: '100%',
@@ -186,12 +198,12 @@ const styles = StyleSheet.create({
   featureCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
+    paddingVertical: verticalScale(14),
   },
   featureIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
     backgroundColor: 'rgba(255, 255, 255, 0.34)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.54)',
@@ -199,32 +211,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   featureTextBox: {
-    marginLeft: 18,
+    marginLeft: scale(18),
     flex: 1,
   },
   featureTitle: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '900',
     color: '#0A2A66',
   },
   featureSubtitle: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontWeight: '600',
     color: '#6B84A8',
-    marginTop: 3,
+    marginTop: verticalScale(3),
   },
   divider: {
     height: 1,
     backgroundColor: 'rgba(10, 42, 102, 0.08)',
   },
+  scrollContent: {
+    paddingTop: 20,
+    // Clear the 68px absolute tab bar
+    paddingBottom: 100,
+    gap: 14,
+  },
+  buttonWrapper: {
+    width: '100%',
+    paddingBottom: verticalScale(16),
+  },
   startButtonContainer: {
     width: '100%',
-    height: 59,
+    height: moderateScale(64),
   },
   startButton: {
     flex: 1,
-    borderRadius: 31,
-    backgroundColor: '#0B5CFF', // Base color, would ideally be a gradient
+    borderRadius: moderateScale(32),
+    backgroundColor: '#0B5CFF',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#0B5CFF',
@@ -237,9 +259,9 @@ const styles = StyleSheet.create({
   startButtonHighlight: {
     position: 'absolute',
     top: 0,
-    left: 22,
-    right: 22,
-    height: 28,
+    left: scale(22),
+    right: scale(22),
+    height: verticalScale(28),
     backgroundColor: 'rgba(255, 255, 255, 0.23)',
     borderRadius: 999,
   },
@@ -249,11 +271,13 @@ const styles = StyleSheet.create({
   },
   startButtonText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: scaleFont(18),
     fontWeight: '900',
-    marginLeft: 10,
+    marginLeft: scale(10),
     letterSpacing: 0.2,
   },
 });
+
+
 
 

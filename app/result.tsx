@@ -1,16 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Image, ScrollView, StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
+import { Animated, Image, ScrollView, StyleSheet, Text, View, Pressable, type LayoutChangeEvent, useWindowDimensions } from 'react-native';
 
 import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { GlassView } from '@/components/nailscan/glass-view';
 import { getConditionInfo } from '@/data/diagnosis';
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
+import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
 
 export default function ResultScreen() {
   const router = useRouter();
   const colors = useNailScanColors();
+  const { height: screenHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{ 
     label: string; 
     confidence: string; 
@@ -45,18 +47,18 @@ export default function ResultScreen() {
   const getRoiStyle = () => {
     if (!roiRaw || !imageSize || !layoutSize) return null;
 
-    const scale = Math.max(layoutSize.width / imageSize.width, layoutSize.height / imageSize.height);
-    const renderedWidth = imageSize.width * scale;
-    const renderedHeight = imageSize.height * scale;
+    const scaleFactor = Math.max(layoutSize.width / imageSize.width, layoutSize.height / imageSize.height);
+    const renderedWidth = imageSize.width * scaleFactor;
+    const renderedHeight = imageSize.height * scaleFactor;
     const offsetX = (layoutSize.width - renderedWidth) / 2;
     const offsetY = (layoutSize.height - renderedHeight) / 2;
 
     return {
       position: 'absolute' as const,
-      left: offsetX + roiRaw.x * scale,
-      top: offsetY + roiRaw.y * scale,
-      width: roiRaw.width * scale,
-      height: roiRaw.height * scale,
+      left: offsetX + roiRaw.x * scaleFactor,
+      top: offsetY + roiRaw.y * scaleFactor,
+      width: roiRaw.width * scaleFactor,
+      height: roiRaw.height * scaleFactor,
       borderWidth: 2,
       borderColor: '#0B5CFF',
       backgroundColor: 'rgba(11, 92, 255, 0.15)',
@@ -208,6 +210,8 @@ export default function ResultScreen() {
             </View>
           </GlassView>
 
+          <View style={styles.spacer} />
+
           {/* Buttons */}
           <View style={styles.btnRow}>
             <Pressable style={[styles.btn, styles.doneBtn]} onPress={() => router.push('/(tabs)')}>
@@ -226,7 +230,7 @@ export default function ResultScreen() {
 function AnalysisItem({ icon, label, detail }: any) {
   return (
     <View style={styles.analysisItem}>
-      <Ionicons name={icon} size={20} color="#0B6BFF" />
+      <Ionicons name={icon} size={moderateScale(20)} color="#0B6BFF" />
       <Text style={styles.analysisLabel}>{label}</Text>
       <Text style={styles.analysisDetail} numberOfLines={3}>{detail}</Text>
     </View>
@@ -237,7 +241,7 @@ function InfoSection({ icon, title, content }: any) {
   return (
     <GlassView style={styles.infoCard} intensity={86}>
       <View style={styles.iconBubble}>
-        <Ionicons name={icon} size={24} color="#0B6BFF" />
+        <Ionicons name={icon} size={moderateScale(24)} color="#0B6BFF" />
       </View>
       <View style={styles.infoTextCol}>
         <Text style={styles.sectionTitle}>{title}</Text>
@@ -255,7 +259,7 @@ function BulletSection({ icon, title, bullets, twoColumns }: any) {
   return (
     <GlassView style={styles.infoCard} intensity={86}>
       <View style={styles.iconBubble}>
-        <Ionicons name={icon} size={24} color="#0B6BFF" />
+        <Ionicons name={icon} size={moderateScale(24)} color="#0B6BFF" />
       </View>
       <View style={styles.infoTextCol}>
         <Text style={styles.sectionTitle}>{title}</Text>
@@ -288,15 +292,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 78,
+    height: verticalScale(70),
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 0,
   },
   backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(16),
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.72)',
@@ -306,32 +310,33 @@ const styles = StyleSheet.create({
   headerTextCol: {
     flex: 1,
     alignItems: 'center',
-    marginRight: 42,
+    marginRight: moderateScale(42),
   },
   headerTitle: {
     color: '#071F55',
-    fontSize: 23,
+    fontSize: scaleFont(23),
     fontWeight: '900',
     letterSpacing: -0.4,
   },
   headerSubtitle: {
     color: '#3F5F8F',
-    fontSize: 13.5,
+    fontSize: scaleFont(13),
     fontWeight: '700',
-    marginTop: 3,
+    marginTop: verticalScale(3),
   },
   scrollContent: {
-    paddingBottom: 40,
-    gap: 10,
+    paddingBottom: verticalScale(40),
+    gap: verticalScale(10),
+    flexGrow: 1,
   },
   imageBox: {
-    height: 210,
+    height: verticalScale(210),
     width: '100%',
   },
   imageBorder: {
     flex: 1,
     padding: 2,
-    borderRadius: 22,
+    borderRadius: moderateScale(22),
     borderColor: 'rgba(255, 255, 255, 0.95)',
     borderWidth: 2,
   },
@@ -341,113 +346,113 @@ const styles = StyleSheet.create({
     height: '100%',
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 20,
+    borderRadius: moderateScale(20),
   },
   roiLabelBox: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
+    bottom: verticalScale(8),
+    right: scale(8),
     backgroundColor: 'rgba(11, 92, 255, 0.7)',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(8),
   },
   roiLabelText: {
     color: 'white',
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontWeight: '700',
-    marginLeft: 4,
+    marginLeft: scale(4),
   },
   image: {
     width: '100%',
     height: '100%',
-    borderRadius: 20,
+    borderRadius: moderateScale(20),
   },
   imagePlaceholder: {
     flex: 1,
     backgroundColor: '#D8EDFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
+    borderRadius: moderateScale(20),
   },
   summaryCard: {
     flexDirection: 'row',
-    padding: 14,
+    padding: scale(14),
     alignItems: 'center',
   },
   iconBubble: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: moderateScale(52),
+    height: moderateScale(52),
+    borderRadius: moderateScale(26),
     backgroundColor: 'rgba(11, 107, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   summaryTextCol: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: scale(12),
   },
   conditionLabel: {
-    fontSize: 19,
+    fontSize: scaleFont(19),
     fontWeight: '900',
     letterSpacing: -0.2,
   },
   conditionSubtitle: {
     color: '#3F5F8F',
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontWeight: '700',
-    marginTop: 3,
+    marginTop: verticalScale(3),
   },
   confidenceBox: {
-    width: 78,
-    paddingVertical: 10,
+    width: scale(78),
+    paddingVertical: verticalScale(10),
     backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderRadius: 16,
+    borderRadius: moderateScale(16),
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.95)',
     alignItems: 'center',
   },
   confidenceVal: {
     color: '#0B6BFF',
-    fontSize: 23,
+    fontSize: scaleFont(23),
     fontWeight: '900',
     letterSpacing: -0.6,
   },
   confidenceLabel: {
     color: '#3F5F8F',
-    fontSize: 11.5,
+    fontSize: scaleFont(11),
     fontWeight: '700',
   },
   savedCard: {
     flexDirection: 'row',
-    padding: 16,
+    padding: scale(16),
     alignItems: 'center',
     backgroundColor: 'rgba(21, 153, 71, 0.07)',
   },
   savedTextCol: {
-    marginLeft: 14,
+    marginLeft: scale(14),
   },
   savedTitle: {
     color: '#159947',
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontWeight: '900',
   },
   savedSubtitle: {
     color: '#3F5F8F',
-    fontSize: 12.5,
+    fontSize: scaleFont(12.5),
     fontWeight: '600',
-    marginTop: 3,
+    marginTop: verticalScale(3),
   },
   detailsCard: {
-    padding: 14,
+    padding: scale(14),
   },
   sectionTitle: {
     color: '#071F55',
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontWeight: '900',
-    marginBottom: 14,
+    marginBottom: verticalScale(14),
   },
   analysisRow: {
     flexDirection: 'row',
@@ -457,40 +462,40 @@ const styles = StyleSheet.create({
   },
   analysisLabel: {
     color: '#071F55',
-    fontSize: 12.5,
+    fontSize: scaleFont(12.5),
     fontWeight: '900',
-    marginTop: 8,
+    marginTop: verticalScale(8),
   },
   analysisDetail: {
     color: '#3F5F8F',
-    fontSize: 11.8,
-    lineHeight: 16,
+    fontSize: scaleFont(11.5),
+    lineHeight: verticalScale(16),
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: verticalScale(4),
   },
   verticalDivider: {
     width: 1,
-    height: 96,
+    height: verticalScale(96),
     backgroundColor: 'rgba(185, 217, 255, 0.85)',
-    marginHorizontal: 10,
+    marginHorizontal: scale(10),
   },
   infoCard: {
     flexDirection: 'row',
-    padding: 14,
+    padding: scale(14),
   },
   infoTextCol: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: scale(14),
   },
   infoContent: {
     color: '#3F5F8F',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: scaleFont(13),
+    lineHeight: verticalScale(18),
     fontWeight: '600',
   },
   bulletRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: scale(12),
   },
   bulletCol: {
     flex: 1,
@@ -498,51 +503,55 @@ const styles = StyleSheet.create({
   bulletItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 6,
+    marginBottom: verticalScale(6),
   },
   bulletDot: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
     backgroundColor: '#0B6BFF',
-    marginTop: 6,
-    marginRight: 8,
+    marginTop: verticalScale(6),
+    marginRight: scale(8),
   },
   bulletText: {
     color: '#3F5F8F',
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontWeight: '600',
-    lineHeight: 17,
+    lineHeight: verticalScale(17),
   },
   riskCard: {
     flexDirection: 'row',
-    padding: 14,
+    padding: scale(14),
   },
   riskTextCol: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: scale(14),
   },
   riskLevelVal: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontWeight: '900',
-    marginTop: -8,
+    marginTop: verticalScale(-8),
   },
   riskNote: {
     color: '#3F5F8F',
-    fontSize: 12.3,
-    lineHeight: 17,
+    fontSize: scaleFont(12),
+    lineHeight: verticalScale(17),
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: verticalScale(4),
+  },
+  spacer: {
+    flex: 1,
+    minHeight: verticalScale(20),
   },
   btnRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
+    gap: scale(12),
+    marginTop: verticalScale(10),
   },
   btn: {
     flex: 1,
-    height: 54,
-    borderRadius: 18,
+    height: moderateScale(58),
+    borderRadius: moderateScale(18),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -551,7 +560,7 @@ const styles = StyleSheet.create({
   },
   doneBtnText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '900',
   },
   scanBtn: {
@@ -561,7 +570,8 @@ const styles = StyleSheet.create({
   },
   scanBtnText: {
     color: '#0B6BFF',
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '900',
   },
 });
+

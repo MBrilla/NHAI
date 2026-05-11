@@ -240,7 +240,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 20,
-    paddingBottom: 40,
+    // Clear the 68px absolute tab bar
+    paddingBottom: 100,
     gap: 14,
   },
   autoSaveCard: {
