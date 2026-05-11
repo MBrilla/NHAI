@@ -2,165 +2,129 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useNailScanColors } from '@/hooks/use-nailscan-colors';
+import { GlassView } from '@/components/nailscan/glass-view';
+import { moderateScale, scale, scaleFont, verticalScale } from '@/utils/ui';
 
 export default function SplashRoute() {
   const router = useRouter();
-  const colors = useNailScanColors();
-  const styles = makeStyles(colors);
   const fade = useRef(new Animated.Value(0)).current;
-  const dot1 = useRef(new Animated.Value(0)).current;
-  const dot2 = useRef(new Animated.Value(0)).current;
-  const dot3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const animateDot = (dot: Animated.Value, delayMs: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delayMs),
-          Animated.timing(dot, {
-            toValue: -10,
-            duration: 300,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(dot, {
-            toValue: 0,
-            duration: 300,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.delay(300),
-        ])
-      );
-
-    Animated.timing(fade, { toValue: 1, duration: 1000, useNativeDriver: true }).start();
-
-    const dotsAnimation = Animated.parallel([
-      animateDot(dot1, 0),
-      animateDot(dot2, 150),
-      animateDot(dot3, 300),
-    ]);
-    dotsAnimation.start();
+    Animated.timing(fade, { toValue: 1, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
 
     const timer = setTimeout(() => {
       router.replace('/(tabs)');
-    }, 2300);
+    }, 2800);
 
     return () => {
       clearTimeout(timer);
-      dotsAnimation.stop();
     };
-  }, [dot1, dot2, dot3, fade, router]);
+  }, [fade, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      {/* Premium Blue Background */}
       <LinearGradient
-        colors={['#EFF6FF', '#FFFFFF']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={styles.backgroundGradient}
+        colors={['#1E3A8A', '#2563EB', '#3B82F6', '#BFE2FF']}
+        locations={[0, 0.42, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
       />
 
-      <View style={styles.topSection}>
-        <Animated.View style={[styles.logoWrap, { opacity: fade }]}>
-          <View style={styles.logoTile}>
-            <Image source={require('@/assets/images/nailscan-mini-logo.png')} style={styles.logoImage} resizeMode="contain" />
-          </View>
-        </Animated.View>
-      </View>
+      {/* Simulated Soft Glows */}
+      <View style={[styles.glow, { top: -70, left: -55, width: 190, height: 190, borderRadius: 95, opacity: 0.2 }]} />
+      <View style={[styles.glow, { top: 90, right: -80, width: 230, height: 230, borderRadius: 115, opacity: 0.15 }]} />
+      <View style={[styles.glow, { bottom: -80, left: 55, width: 230, height: 230, borderRadius: 115, opacity: 0.12 }]} />
 
-      <View style={styles.centerSection}>
-        <Animated.View style={{ opacity: fade }}>
-          <Text style={styles.name}>NailScan</Text>
-          <Text style={styles.tagline}>AI-Powered Nail Health Analysis</Text>
-        </Animated.View>
-      </View>
+      {/* Simulated Bokeh Dots */}
+      <View style={[styles.bokehDot, { top: '10%', left: '10%', width: 36, height: 36, borderRadius: 18, opacity: 0.16 }]} />
+      <View style={[styles.bokehDot, { top: '8%', right: '10%', width: 24, height: 24, borderRadius: 12, opacity: 0.16 }]} />
+      <View style={[styles.bokehDot, { top: '38%', left: '16%', width: 52, height: 52, borderRadius: 26, opacity: 0.1 }]} />
+      <View style={[styles.bokehDot, { top: '30%', right: '22%', width: 76, height: 76, borderRadius: 38, opacity: 0.13 }]} />
+      <View style={[styles.bokehDot, { top: '72%', right: '14%', width: 44, height: 44, borderRadius: 22, opacity: 0.12 }]} />
+      <View style={[styles.bokehDot, { top: '78%', left: '24%', width: 32, height: 32, borderRadius: 16, opacity: 0.12 }]} />
 
-      <View style={styles.bottomSection}>
-        <View style={styles.dotRow}>
-          <Animated.View style={[styles.dot, { transform: [{ translateY: dot1 }] }]} />
-          <Animated.View style={[styles.dot, { transform: [{ translateY: dot2 }] }]} />
-          <Animated.View style={[styles.dot, { transform: [{ translateY: dot3 }] }]} />
+      <Animated.View style={[styles.content, { opacity: fade }]}>
+        <GlassView
+          intensity={40}
+          borderRadius={34}
+          backgroundColor="rgba(255, 255, 255, 0.18)"
+          borderColor="rgba(255, 255, 255, 0.42)"
+          borderWidth={1.4}
+          style={styles.logoTile}
+        >
+          <Image source={require('@/assets/images/nailscan-mini-logo.png')} style={styles.logoImage} resizeMode="contain" />
+        </GlassView>
+
+        <Text style={styles.name}>NailScan</Text>
+        
+        <View style={styles.taglinePill}>
+          <Text style={styles.taglineText}>AI Nail Health Analysis</Text>
         </View>
-      </View>
-    </SafeAreaView>
+      </Animated.View>
+    </View>
   );
 }
 
-const makeStyles = (colors: ReturnType<typeof useNailScanColors>) => StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#1E3A8A',
   },
-  backgroundGradient: {
-    ...StyleSheet.absoluteFillObject,
+  glow: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
   },
-  topSection: {
-    flex: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
+  bokehDot: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  centerSection: {
-    flex: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  bottomSection: {
-    flex: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoWrap: {
-    width: 128,
-    height: 128,
+  content: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoTile: {
-    width: 128,
-    height: 128,
-    borderRadius: 24,
-    backgroundColor: '#2563EB',
+    width: moderateScale(118),
+    height: moderateScale(118),
+    padding: moderateScale(19),
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: '#0B5CFF',
+    shadowOpacity: 0.3,
+    shadowRadius: 34,
+    shadowOffset: { width: 0, height: 14 },
     elevation: 8,
+    marginBottom: verticalScale(24),
   },
   logoImage: {
-    width: 86,
-    height: 86,
+    width: '100%',
+    height: '100%',
   },
   name: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
+    fontSize: scaleFont(32),
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    marginBottom: verticalScale(7),
   },
-  tagline: {
-    marginTop: 16,
-    fontSize: 16,
-    lineHeight: 22,
-    color: '#6B7280',
-    textAlign: 'center',
-    maxWidth: 280,
+  taglinePill: {
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(7),
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
   },
-  dotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2563EB',
+  taglineText: {
+    fontSize: scaleFont(13),
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

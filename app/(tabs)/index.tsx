@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -49,6 +50,17 @@ export default function HomeScreen() {
   return (
     <ScreenShell variant="default">
       <Animated.View style={[styles.container, { opacity: fadeRef, transform: [{ translateY: slideRef }] }]}>
+        <LinearGradient
+          colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+          locations={[0, 0.34, 0.72, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[styles.glow, { top: -60, right: -60, width: 190, height: 190, borderRadius: 95, opacity: 0.33 }]} />
+        <View style={[styles.glow, { top: 170, left: -75, width: 180, height: 180, borderRadius: 90, opacity: 0.20 }]} />
+        <View style={[styles.glow, { bottom: 80, right: -45, width: 150, height: 150, borderRadius: 75, opacity: 0.20 }]} />
+        
         {/* Header Section */}
         <View style={styles.header}>
           <View style={styles.headerText}>
@@ -96,6 +108,12 @@ export default function HomeScreen() {
         <View style={styles.buttonWrapper}>
           <Pressable onPress={handleStartDiagnosis} style={styles.startButtonContainer}>
             <View style={styles.startButton}>
+              <LinearGradient
+                colors={['#3B82F6', '#0B5CFF', '#1D4ED8']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={StyleSheet.absoluteFillObject}
+              />
               <View style={styles.startButtonHighlight} />
               <View style={styles.startButtonRow}>
                 <Ionicons name="sparkles" size={moderateScale(22)} color="white" />
@@ -138,8 +156,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: verticalScale(10),
-    // Increase padding to clear the 68px absolute tab bar + 32px breathing room (Global fix)
-    paddingBottom: verticalScale(100),
+    paddingBottom: verticalScale(120),
+  },
+  glow: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    elevation: 10,
   },
   header: {
     flexDirection: 'row',
@@ -246,7 +271,6 @@ const styles = StyleSheet.create({
   startButton: {
     flex: 1,
     borderRadius: moderateScale(32),
-    backgroundColor: '#0B5CFF',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#0B5CFF',

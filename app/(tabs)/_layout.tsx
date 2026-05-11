@@ -29,15 +29,15 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopColor: 'rgba(207, 224, 255, 0.5)',
           backgroundColor: 'rgba(255, 255, 255, 0.4)',
-          height: 68,
-          paddingBottom: 10,
-          paddingTop: 8,
+          height: 86,
+          paddingBottom: 22,
+          paddingTop: 12,
           elevation: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: '700',
-          marginTop: -2,
+          marginTop: 2,
         },
       }}>
       <Tabs.Screen
@@ -45,7 +45,7 @@ export default function TabLayout() {
         options={{
           title: 'Diagnose',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
+            <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />
           ),
         }}
       />
@@ -54,7 +54,7 @@ export default function TabLayout() {
         options={{
           title: 'History',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "time" : "time-outline"} size={22} color={color} />
+            <Ionicons name={focused ? "time" : "time-outline"} size={26} color={color} />
           ),
         }}
       />
@@ -63,7 +63,7 @@ export default function TabLayout() {
         options={{
           title: 'About',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "information-circle" : "information-circle-outline"} size={22} color={color} />
+            <Ionicons name={focused ? "information-circle" : "information-circle-outline"} size={26} color={color} />
           ),
         }}
       />

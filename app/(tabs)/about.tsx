@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -19,6 +20,13 @@ export default function AboutScreen() {
   return (
     <ScreenShell variant="default">
       <View style={styles.container}>
+        <LinearGradient
+          colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+          locations={[0, 0.34, 0.72, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
@@ -185,8 +193,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 20,
-    // Clear the 68px absolute tab bar
-    paddingBottom: 100,
+    // Clear the absolute tab bar
+    paddingBottom: 120,
   },
   logoSection: {
     alignItems: 'center',

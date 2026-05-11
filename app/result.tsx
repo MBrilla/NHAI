@@ -238,6 +238,7 @@ function AnalysisItem({ icon, label, detail }: any) {
 }
 
 function InfoSection({ icon, title, content }: any) {
+  const displayContent = Array.isArray(content) ? content.join(', ') : content;
   return (
     <GlassView style={styles.infoCard} intensity={86}>
       <View style={styles.iconBubble}>
@@ -245,7 +246,7 @@ function InfoSection({ icon, title, content }: any) {
       </View>
       <View style={styles.infoTextCol}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <Text style={styles.infoContent}>{content}</Text>
+        <Text style={styles.infoContent}>{displayContent}</Text>
       </View>
     </GlassView>
   );

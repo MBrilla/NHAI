@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -8,7 +9,7 @@ import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { GlassView } from '@/components/nailscan/glass-view';
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 import type { ScanHistoryEntry } from '@/services/scan-history';
-import { clearScanHistory, getScanHistory } from '@/services/scan-history';
+import { clearScanHistory, getScanHistory, deleteScanHistoryEntry } from '@/services/scan-history';
 
 export default function HistoryScreen() {
   const router = useRouter();
@@ -60,9 +61,34 @@ export default function HistoryScreen() {
     ]);
   };
 
+  const handleDeleteItem = (id: string) => {
+    Alert.alert('Delete Scan', 'Are you sure you want to delete this scan result?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteScanHistoryEntry(id);
+          setHistory(prev => prev.filter(item => item.id !== id));
+        },
+      },
+    ]);
+  };
+
   return (
     <ScreenShell variant="default">
       <View style={styles.container}>
+        <LinearGradient
+          colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+          locations={[0, 0.34, 0.72, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[styles.glow, { top: -90, left: -70, width: 260, height: 260, borderRadius: 130, opacity: 0.24 }]} />
+        <View style={[styles.glow, { top: 120, right: -90, width: 230, height: 230, borderRadius: 115, opacity: 0.15 }]} />
+        <View style={[styles.glow, { bottom: 80, left: -100, width: 250, height: 250, borderRadius: 125, opacity: 0.16 }]} />
+        
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
@@ -88,9 +114,12 @@ export default function HistoryScreen() {
             <>
               {/* Auto Save Card */}
               <GlassView style={styles.autoSaveCard} intensity={86}>
-                <View style={styles.autoSaveIconBox}>
+                <LinearGradient
+                  colors={['#5FA8FF', '#006DFF']}
+                  style={styles.autoSaveIconBox}
+                >
                   <Ionicons name="checkmark-circle" size={30} color="white" />
-                </View>
+                </LinearGradient>
                 <View style={styles.autoSaveTextBox}>
                   <Text style={styles.autoSaveTitle}>Results are automatically saved</Text>
                   <Text style={styles.autoSaveText}>
@@ -140,6 +169,7 @@ export default function HistoryScreen() {
                     },
                   });
                 }}
+                onDelete={() => handleDeleteItem(entry.id)}
               />
             ))
           )}
@@ -149,7 +179,7 @@ export default function HistoryScreen() {
   );
 }
 
-function HistoryCard({ entry, formattedDate, onPress }: { entry: ScanHistoryEntry, formattedDate: string, onPress: () => void }) {
+function HistoryCard({ entry, formattedDate, onPress, onDelete }: { entry: ScanHistoryEntry, formattedDate: string, onPress: () => void, onDelete: () => void }) {
   const confidencePct = Math.round(entry.confidence * 100);
   const isHealthy = entry.label.toLowerCase().includes('healthy');
   const isUnidentified = entry.label.toLowerCase().includes('unidentified');
@@ -194,7 +224,9 @@ function HistoryCard({ entry, formattedDate, onPress }: { entry: ScanHistoryEntr
               <Text style={[styles.riskLabel, { color: riskColor }]}>{riskLabel}</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={24} color="#006DFF" />
+          <Pressable onPress={onDelete} style={styles.deleteBtn}>
+            <Ionicons name="trash-outline" size={24} color="#FF6B6B" />
+          </Pressable>
         </View>
       </GlassView>
     </Pressable>
@@ -204,6 +236,14 @@ function HistoryCard({ entry, formattedDate, onPress }: { entry: ScanHistoryEntr
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  glow: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 1,
+    shadowRadius: 25,
+    elevation: 10,
   },
   header: {
     flexDirection: 'row',
@@ -240,8 +280,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 20,
-    // Clear the 68px absolute tab bar
-    paddingBottom: 100,
+    // Clear the absolute tab bar
+    paddingBottom: 120,
     gap: 14,
   },
   autoSaveCard: {
@@ -253,7 +293,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#006DFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -347,6 +386,10 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '900',
     marginLeft: 6,
+  },
+  deleteBtn: {
+    padding: 8,
+    marginRight: -4,
   },
   loadingBox: {
     padding: 40,
