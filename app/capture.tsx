@@ -2,75 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { GlassView } from '@/components/nailscan/glass-view';
 import * as ImagePicker from 'expo-image-picker';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 const GUIDE_FRAME_WIDTH_RATIO = 0.45;
 const GUIDE_FRAME_HEIGHT_RATIO = 0.65;
-
-type LayoutSize = { width: number; height: number };
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-function getGuideCropRect(
-  imageWidth: number,
-  imageHeight: number,
-  previewLayout: LayoutSize | null
-): { originX: number; originY: number; width: number; height: number } {
-  const layoutWidth = previewLayout?.width ?? imageWidth;
-  const layoutHeight = previewLayout?.height ?? imageHeight;
-  const guideWidth = layoutWidth * GUIDE_FRAME_WIDTH_RATIO;
-  const guideHeight = layoutHeight * GUIDE_FRAME_HEIGHT_RATIO;
-  const guideX = (layoutWidth - guideWidth) / 2;
-  const guideY = (layoutHeight - guideHeight) / 2;
-
-  let cropX = guideX;
-  let cropY = guideY;
-  let cropWidth = guideWidth;
-  let cropHeight = guideHeight;
-
-  if (previewLayout && previewLayout.width > 0 && previewLayout.height > 0) {
-    const scale = Math.max(layoutWidth / imageWidth, layoutHeight / imageHeight);
-    const renderedWidth = imageWidth * scale;
-    const renderedHeight = imageHeight * scale;
-    const offsetX = (layoutWidth - renderedWidth) / 2;
-    const offsetY = (layoutHeight - renderedHeight) / 2;
-    cropX = (guideX - offsetX) / scale;
-    cropY = (guideY - offsetY) / scale;
-    cropWidth = guideWidth / scale;
-    cropHeight = guideHeight / scale;
-  } else {
-    cropWidth = imageWidth * GUIDE_FRAME_WIDTH_RATIO;
-    cropHeight = imageHeight * GUIDE_FRAME_HEIGHT_RATIO;
-    cropX = (imageWidth - cropWidth) / 2;
-    cropY = (imageHeight - cropHeight) / 2;
-  }
-
-  const originX = clamp(Math.round(cropX), 0, Math.max(0, imageWidth - 1));
-  const originY = clamp(Math.round(cropY), 0, Math.max(0, imageHeight - 1));
-  const width = clamp(Math.round(cropWidth), 1, Math.max(1, imageWidth - originX));
-  const height = clamp(Math.round(cropHeight), 1, Math.max(1, imageHeight - originY));
-
-  return { originX, originY, width, height };
-}
-
-async function cropToGuideRoi(
-  uri: string,
-  imageWidth: number,
-  imageHeight: number,
-  previewLayout: LayoutSize | null
-) {
-  const cropRect = getGuideCropRect(imageWidth, imageHeight, previewLayout);
-  return manipulateAsync(
-    uri,
-    [{ crop: cropRect }],
-    { compress: 0.94, format: SaveFormat.JPEG }
-  );
-}
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -79,7 +18,6 @@ export default function CaptureScreen() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [autoFocus, setAutoFocus] = useState<'on' | 'off'>('on');
-  const [previewLayout, setPreviewLayout] = useState<LayoutSize | null>(null);
 
   if (!permission) {
     return <View />;
@@ -103,17 +41,9 @@ export default function CaptureScreen() {
       try {
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.92, skipProcessing: false });
         if (!photo?.uri) return;
-
-        if (photo.width && photo.height) {
-          try {
-            const cropped = await cropToGuideRoi(photo.uri, photo.width, photo.height, previewLayout);
-            setCapturedImage(cropped.uri);
-            return;
-          } catch (cropError) {
-            console.warn('Guide crop failed, falling back to full image.', cropError);
-          }
-        }
-
+        // Pass full-resolution image to inference; the inference service
+        // handles all ROI extraction and preprocessing to match the
+        // training pipeline exactly.
         setCapturedImage(photo.uri);
       } catch (err) {
         console.error("Capture error:", err);
@@ -177,15 +107,7 @@ export default function CaptureScreen() {
         {/* Camera Preview */}
         <View style={styles.previewContainer}>
           <GlassView style={styles.previewBorder} intensity={16}>
-            <View
-              style={styles.cameraBox}
-              onLayout={(event: LayoutChangeEvent) => {
-                const { width, height } = event.nativeEvent.layout;
-                if (width > 0 && height > 0) {
-                  setPreviewLayout({ width, height });
-                }
-              }}
-            >
+            <View style={styles.cameraBox}>
               {!capturedImage ? (
                 <CameraView
                   ref={cameraRef}

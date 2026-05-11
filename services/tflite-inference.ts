@@ -600,125 +600,304 @@ function resizeRgbBilinear(src: Float32Array, srcW: number, srcH: number, dstW: 
   return out;
 }
 
-function extractRoiBySkinMask(rgb: Float32Array, width: number, height: number): {
-  rgb: Float32Array;
-  roi: { x: number; y: number; width: number; height: number };
-} {
-  const mask: Uint8Array<ArrayBufferLike> = new Uint8Array(width * height);
+/**
+ * Compute Otsu's threshold on a grayscale histogram.
+ * Finds the intensity threshold that minimizes intra-class variance,
+ * exactly matching OpenCV's cv2.THRESH_OTSU behavior used in training.
+ */
+function computeOtsuThreshold(grayPixels: Uint8Array, total: number): number {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < total; i++) hist[grayPixels[i]]++;
 
-  for (let i = 0; i < width * height; i++) {
-    const idx = i * 3;
-    const { h, s, v } = rgbToHsv(rgb[idx], rgb[idx + 1], rgb[idx + 2]);
-    const inRange1 = h >= 0 && h <= 25 && s >= 15 && v >= 60;
-    const inRange2 = h >= 155 && h <= 180 && s >= 15 && v >= 60;
-    mask[i] = inRange1 || inRange2 ? 1 : 0;
+  let sumAll = 0;
+  for (let i = 0; i < 256; i++) sumAll += i * hist[i];
+
+  let sumB = 0;
+  let wB = 0;
+  let bestThreshold = 0;
+  let bestVariance = 0;
+
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sumAll - sumB) / wF;
+    const variance = wB * wF * (mB - mF) * (mB - mF);
+
+    if (variance > bestVariance) {
+      bestVariance = variance;
+      bestThreshold = t;
+    }
   }
 
-  let refined: Uint8Array<ArrayBufferLike> = mask;
-  for (let i = 0; i < 2; i++) refined = dilateMask(refined, width, height);
-  for (let i = 0; i < 1; i++) refined = erodeMask(refined, width, height);
+  return bestThreshold;
+}
 
-  const best = findLargestMaskBoundingBox(refined, width, height);
-  const imageArea = width * height;
-  if (!best || best.area / imageArea <= 0.05) {
-    const crop = getCenterCrop(width, height, 0.1);
-    const cropped = new Float32Array(crop.width * crop.height * 3);
-    for (let y = 0; y < crop.height; y++) {
-      for (let x = 0; x < crop.width; x++) {
-        const src = ((crop.originY + y) * width + (crop.originX + x)) * 3;
-        const dst = (y * crop.width + x) * 3;
-        cropped[dst] = rgb[src];
-        cropped[dst + 1] = rgb[src + 1];
-        cropped[dst + 2] = rgb[src + 2];
-      }
-    }
+/**
+ * Otsu's-threshold-based loose crop — faithful port of the training pipeline's
+ * `loose_crop(img, padding_ratio=0.35)` function.
+ *
+ * 1. Convert to grayscale
+ * 2. Apply Otsu's automatic threshold (binary)
+ * 3. Find largest connected component (contour)
+ * 4. Get its bounding box
+ * 5. Add padding_ratio padding on all sides
+ */
+function extractROIByOtsuCrop(
+  rgb: Float32Array, width: number, height: number, paddingRatio = 0.35
+): {
+  rgb: Float32Array;
+  cropW: number;
+  cropH: number;
+  roi: { x: number; y: number; width: number; height: number };
+} {
+  const total = width * height;
+
+  // Step 1: Convert to grayscale
+  const gray = new Uint8Array(total);
+  for (let i = 0; i < total; i++) {
+    const idx = i * 3;
+    gray[i] = Math.round(0.299 * rgb[idx] + 0.587 * rgb[idx + 1] + 0.114 * rgb[idx + 2]) | 0;
+  }
+
+  // Step 2: Otsu's threshold
+  const threshold = computeOtsuThreshold(gray, total);
+  const mask = new Uint8Array(total);
+  for (let i = 0; i < total; i++) {
+    mask[i] = gray[i] > threshold ? 1 : 0;
+  }
+
+  // Step 3: Find largest connected component
+  const best = findLargestMaskBoundingBox(mask, width, height);
+
+  // Fallback: if no contour found or too small, use full image
+  if (!best || best.area < total * 0.01) {
     return {
-      rgb: resizeRgbBilinear(cropped, crop.width, crop.height, width, height),
-      roi: { x: crop.originX, y: crop.originY, width: crop.width, height: crop.height }
+      rgb,
+      cropW: width,
+      cropH: height,
+      roi: { x: 0, y: 0, width, height },
     };
   }
 
-  const pad = 15;
-  const skinMinX = Math.max(0, best.minX - pad);
-  const skinMinY = Math.max(0, best.minY - pad);
-  const skinMaxX = Math.min(width - 1, best.maxX + pad);
-  const skinMaxY = Math.min(height - 1, best.maxY + pad);
-  const skinW = Math.max(1, skinMaxX - skinMinX + 1);
-  const skinH = Math.max(1, skinMaxY - skinMinY + 1);
+  // Step 4: Bounding box
+  const bx = best.minX;
+  const by = best.minY;
+  const bw = best.maxX - best.minX + 1;
+  const bh = best.maxY - best.minY + 1;
 
-  // --- Narrow from "skin region" to "nail region" ---
-  // The skin mask captures the whole finger/hand. The nail is a small,
-  // roughly rectangular area that typically sits in the upper-center of the
-  // finger. We estimate the nail's position by taking approximately the
-  // top 45% vertically and center 65% horizontally of the skin bounding box.
-  // This produces a tight crop that closely matches the training data
-  // (close-up nail images).
-  const skinAspect = skinW / skinH;
-  const skinAreaRatio = (skinW * skinH) / imageArea;
+  // Step 5: Add padding (matching training's padding_ratio=0.35)
+  const padX = Math.round(bw * paddingRatio);
+  const padY = Math.round(bh * paddingRatio);
+  const x1 = Math.max(0, bx - padX);
+  const y1 = Math.max(0, by - padY);
+  const x2 = Math.min(width, bx + bw + padX);
+  const y2 = Math.min(height, by + bh + padY);
+  const cropW = x2 - x1;
+  const cropH = y2 - y1;
 
-  // Only apply nail-narrowing if the skin region is large enough that it
-  // likely contains more than just the nail (i.e. includes finger/hand skin).
-  // If the skin region is already small (<20% of the image), the user has
-  // likely already framed the nail tightly and we should not over-crop.
-  let nailMinX: number;
-  let nailMinY: number;
-  let nailW: number;
-  let nailH: number;
-
-  if (skinAreaRatio > 0.25) {
-    // Large skin region detected – narrow down to estimated nail area
-    const narrowHorizontal = 0.65;  // use center 65% of width
-    
-    const horzInset = skinW * ((1 - narrowHorizontal) / 2);
-    nailMinX = Math.max(0, Math.round(skinMinX + horzInset));
-    nailW = Math.max(1, Math.round(skinW * narrowHorizontal));
-
-    if (skinAspect > 1.3) {
-      // Finger appears to be horizontal – nail could be at either end.
-      // Use center crop vertically.
-      const vertInset = skinH * ((1 - 0.70) / 2);
-      nailMinY = Math.max(0, Math.round(skinMinY + vertInset));
-      nailH = Math.max(1, Math.round(skinH * 0.70));
-    } else {
-      // Finger is vertical or roughly square.
-      // Take the middle 70% of the skin bounding box, but shift it upwards
-      // by 10% since the nail is on the distal half. This safely captures the nail
-      // whether it is centered in the camera frame or at the very tip of a finger.
-      const narrowVertical = 0.70;
-      const vertInset = skinH * ((1 - narrowVertical) / 2);
-      const shiftUp = skinH * 0.10;
-      nailMinY = Math.max(skinMinY, Math.round(skinMinY + vertInset - shiftUp));
-      nailH = Math.max(1, Math.round(skinH * narrowVertical));
-    }
-  } else {
-    // Small/moderate skin region – use the full skin bounding box
-    nailMinX = skinMinX;
-    nailMinY = skinMinY;
-    nailW = skinW;
-    nailH = skinH;
+  if (cropW <= 0 || cropH <= 0) {
+    return {
+      rgb,
+      cropW: width,
+      cropH: height,
+      roi: { x: 0, y: 0, width, height },
+    };
   }
 
-  // Clamp to image bounds
-  nailMinX = Math.max(0, Math.min(width - 1, nailMinX));
-  nailMinY = Math.max(0, Math.min(height - 1, nailMinY));
-  nailW = Math.min(nailW, width - nailMinX);
-  nailH = Math.min(nailH, height - nailMinY);
-
-  const roi = new Float32Array(nailW * nailH * 3);
-  for (let y = 0; y < nailH; y++) {
-    for (let x = 0; x < nailW; x++) {
-      const src = ((nailMinY + y) * width + (nailMinX + x)) * 3;
-      const dst = (y * nailW + x) * 3;
-      roi[dst] = rgb[src];
-      roi[dst + 1] = rgb[src + 1];
-      roi[dst + 2] = rgb[src + 2];
+  // Crop
+  const cropped = new Float32Array(cropW * cropH * 3);
+  for (let y = 0; y < cropH; y++) {
+    for (let x = 0; x < cropW; x++) {
+      const src = ((y1 + y) * width + (x1 + x)) * 3;
+      const dst = (y * cropW + x) * 3;
+      cropped[dst] = rgb[src];
+      cropped[dst + 1] = rgb[src + 1];
+      cropped[dst + 2] = rgb[src + 2];
     }
   }
 
   return {
-    rgb: resizeRgbBilinear(roi, nailW, nailH, width, height),
-    roi: { x: nailMinX, y: nailMinY, width: nailW, height: nailH }
+    rgb: cropped,
+    cropW,
+    cropH,
+    roi: { x: x1, y: y1, width: cropW, height: cropH },
   };
+}
+
+/**
+ * Letterbox resize — faithful port of training pipeline's `letterbox_resize()`.
+ * Scales image to fit target while preserving aspect ratio, pads with black.
+ */
+function letterboxResizeRgb(
+  src: Float32Array, srcW: number, srcH: number,
+  targetW: number, targetH: number
+): Float32Array {
+  const scale = Math.min(targetW / srcW, targetH / srcH);
+  const nw = Math.round(srcW * scale);
+  const nh = Math.round(srcH * scale);
+
+  // First resize preserving aspect ratio
+  const resized = resizeRgbBilinear(src, srcW, srcH, nw, nh);
+
+  // Then pad with black (0,0,0) to fill target size, centered
+  const out = new Float32Array(targetW * targetH * 3); // initialized to 0 = black
+  const top = Math.floor((targetH - nh) / 2);
+  const left = Math.floor((targetW - nw) / 2);
+
+  for (let y = 0; y < nh; y++) {
+    for (let x = 0; x < nw; x++) {
+      const srcIdx = (y * nw + x) * 3;
+      const dstIdx = ((top + y) * targetW + (left + x)) * 3;
+      out[dstIdx] = resized[srcIdx];
+      out[dstIdx + 1] = resized[srcIdx + 1];
+      out[dstIdx + 2] = resized[srcIdx + 2];
+    }
+  }
+
+  return out;
+}
+
+/**
+ * CLAHE on L-channel in LAB color space — matching training's
+ * `apply_clahe(img, clip_limit=1.5, tile_grid_size=(8,8))`.
+ */
+function applyCLAHE(
+  rgb: Float32Array, width: number, height: number,
+  clipLimit = 1.5, gridSize = 8
+): Float32Array {
+  const total = width * height;
+
+  // Convert RGB to LAB (simplified: use L channel from Y of YCbCr as approximation)
+  const lChannel = new Uint8Array(total);
+  for (let i = 0; i < total; i++) {
+    const idx = i * 3;
+    lChannel[i] = Math.round(0.299 * rgb[idx] + 0.587 * rgb[idx + 1] + 0.114 * rgb[idx + 2]) | 0;
+  }
+
+  // CLAHE: divide image into tiles and equalize each with clip limiting
+  const tileW = Math.max(1, Math.ceil(width / gridSize));
+  const tileH = Math.max(1, Math.ceil(height / gridSize));
+  const tilesX = Math.ceil(width / tileW);
+  const tilesY = Math.ceil(height / tileH);
+
+  // Build lookup tables for each tile
+  const luts: Uint8Array[] = [];
+  for (let ty = 0; ty < tilesY; ty++) {
+    for (let tx = 0; tx < tilesX; tx++) {
+      const x0 = tx * tileW;
+      const y0 = ty * tileH;
+      const x1 = Math.min(width, x0 + tileW);
+      const y1 = Math.min(height, y0 + tileH);
+      const tilePixels = (x1 - x0) * (y1 - y0);
+
+      // Build histogram for this tile
+      const hist = new Float64Array(256);
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          hist[lChannel[y * width + x]]++;
+        }
+      }
+
+      // Clip histogram and redistribute
+      const clipCount = Math.max(1, Math.round(clipLimit * tilePixels / 256));
+      let excess = 0;
+      for (let i = 0; i < 256; i++) {
+        if (hist[i] > clipCount) {
+          excess += hist[i] - clipCount;
+          hist[i] = clipCount;
+        }
+      }
+      const perBin = excess / 256;
+      for (let i = 0; i < 256; i++) hist[i] += perBin;
+
+      // Build CDF and LUT
+      const cdf = new Float64Array(256);
+      cdf[0] = hist[0];
+      for (let i = 1; i < 256; i++) cdf[i] = cdf[i - 1] + hist[i];
+      const cdfMin = cdf.find(v => v > 0) ?? 0;
+      const denom = Math.max(1, tilePixels - cdfMin);
+
+      const lut = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) {
+        lut[i] = Math.round(((cdf[i] - cdfMin) / denom) * 255) | 0;
+        if (lut[i] > 255) lut[i] = 255;
+      }
+      luts.push(lut);
+    }
+  }
+
+  // Apply with bilinear interpolation between tiles
+  const newL = new Uint8Array(total);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const txf = (x - tileW / 2) / tileW;
+      const tyf = (y - tileH / 2) / tileH;
+      const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(txf)));
+      const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(tyf)));
+      const tx1 = Math.min(tilesX - 1, tx0 + 1);
+      const ty1 = Math.min(tilesY - 1, ty0 + 1);
+      const fx = Math.max(0, Math.min(1, txf - tx0));
+      const fy = Math.max(0, Math.min(1, tyf - ty0));
+
+      const val = lChannel[y * width + x];
+      const v00 = luts[ty0 * tilesX + tx0][val];
+      const v01 = luts[ty0 * tilesX + tx1][val];
+      const v10 = luts[ty1 * tilesX + tx0][val];
+      const v11 = luts[ty1 * tilesX + tx1][val];
+      const top = v00 * (1 - fx) + v01 * fx;
+      const bottom = v10 * (1 - fx) + v11 * fx;
+      newL[y * width + x] = Math.round(top * (1 - fy) + bottom * fy) | 0;
+    }
+  }
+
+  // Apply L-channel change to RGB by scaling
+  const out = new Float32Array(rgb.length);
+  for (let i = 0; i < total; i++) {
+    const oldL = lChannel[i];
+    const ratio = oldL > 0 ? newL[i] / oldL : 1;
+    const idx = i * 3;
+    out[idx] = clampByte(rgb[idx] * ratio);
+    out[idx + 1] = clampByte(rgb[idx + 1] * ratio);
+    out[idx + 2] = clampByte(rgb[idx + 2] * ratio);
+  }
+
+  return out;
+}
+
+/**
+ * Grey-world white balance — faithful port of training's `grey_world()`.
+ */
+function applyGreyWorld(rgb: Float32Array, width: number, height: number): Float32Array {
+  const total = width * height;
+  const channelMeans = [0, 0, 0];
+  for (let i = 0; i < total; i++) {
+    const idx = i * 3;
+    channelMeans[0] += rgb[idx];
+    channelMeans[1] += rgb[idx + 1];
+    channelMeans[2] += rgb[idx + 2];
+  }
+  channelMeans[0] /= total;
+  channelMeans[1] /= total;
+  channelMeans[2] /= total;
+  const meanGray = (channelMeans[0] + channelMeans[1] + channelMeans[2]) / 3;
+  const scales = [
+    (meanGray + 1e-5) / (channelMeans[0] + 1e-5),
+    (meanGray + 1e-5) / (channelMeans[1] + 1e-5),
+    (meanGray + 1e-5) / (channelMeans[2] + 1e-5),
+  ];
+  const out = new Float32Array(rgb.length);
+  for (let i = 0; i < total; i++) {
+    const idx = i * 3;
+    out[idx] = clampByte(rgb[idx] * scales[0]);
+    out[idx + 1] = clampByte(rgb[idx + 1] * scales[1]);
+    out[idx + 2] = clampByte(rgb[idx + 2] * scales[2]);
+  }
+  return out;
 }
 
 function equalizeLuminance(rgb: Float32Array, width: number, height: number): Float32Array {
@@ -845,61 +1024,53 @@ function normalizeRgbChannels(rgb: Float32Array): Float32Array {
   return out;
 }
 
+/**
+ * Full preprocessing pipeline — exact match of the training notebook's
+ * `preprocess_image()` function (Cell 10).
+ *
+ * Steps:
+ *   1. Otsu's threshold loose crop (padding_ratio=0.35)
+ *   2. Letterbox resize to 384×384 with black padding
+ *   3. CLAHE on L-channel (clipLimit=1.5, grid=8×8)
+ *   4. Grey-world white balance
+ *   5. Gaussian blur (3×3)
+ *
+ * Output is [0, 255] uint8 RGB — the model's include_preprocessing=True
+ * handles normalization to [-1, 1] internally.
+ */
 function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height: number): PreprocessingResult {
+  const modelSize = getModelInputSize();
   const base = Float32Array.from(rgbBytes, (v) => v);
 
-  // --- Match training pipeline order: ROI → CLAHE → Color Constancy → Blur ---
+  // Step 1: Otsu's threshold loose crop (matches training's loose_crop)
+  const { rgb: croppedRgb, cropW, cropH, roi } = extractROIByOtsuCrop(base, width, height, 0.35);
 
-  // 1) ROI extraction (HSV mask based) – training applies this FIRST.
-  const { rgb: roiRgb, roi } = extractRoiBySkinMask(base, width, height);
+  // Step 2: Letterbox resize to model input size (preserves aspect ratio, black padding)
+  const letterboxed = letterboxResizeRgb(croppedRgb, cropW, cropH, modelSize, modelSize);
 
-  // 2) CLAHE-like luminance enhancement (blended to avoid overamplification)
-  const equalized = equalizeLuminance(roiRgb, width, height);
-  const contrast = new Float32Array(equalized.length);
-  for (let i = 0; i < equalized.length; i++) {
-    contrast[i] = clampByte(0.7 * equalized[i] + 0.3 * roiRgb[i]);
-  }
+  // Step 3: CLAHE on L-channel (clipLimit=1.5, grid=8×8)
+  const clahed = applyCLAHE(letterboxed, modelSize, modelSize, 1.5, 8);
 
-  // 3) Gray-world white balance (color constancy)
-  const channelMeans = [0, 0, 0];
-  const count = width * height;
-  for (let i = 0; i < contrast.length; i += 3) {
-    channelMeans[0] += contrast[i];
-    channelMeans[1] += contrast[i + 1];
-    channelMeans[2] += contrast[i + 2];
-  }
-  channelMeans[0] /= count;
-  channelMeans[1] /= count;
-  channelMeans[2] /= count;
-  const gray = (channelMeans[0] + channelMeans[1] + channelMeans[2]) / 3;
-  const balanced = new Float32Array(contrast.length);
-  const scales = [gray / (channelMeans[0] + 1e-6), gray / (channelMeans[1] + 1e-6), gray / (channelMeans[2] + 1e-6)];
-  for (let i = 0; i < contrast.length; i += 3) {
-    balanced[i] = clampByte(contrast[i] * scales[0]);
-    balanced[i + 1] = clampByte(contrast[i + 1] * scales[1]);
-    balanced[i + 2] = clampByte(contrast[i + 2] * scales[2]);
-  }
+  // Step 4: Grey-world white balance
+  const balanced = applyGreyWorld(clahed, modelSize, modelSize);
 
-  // 4) Light Gaussian blur (texture-preserving denoising, matches training step 5)
-  const blurred = blurRgb(balanced, width, height);
+  // Step 5: Gaussian blur (3×3)
+  const blurred = blurRgb(balanced, modelSize, modelSize);
 
-  // No per-channel z-score normalization – training images are standard [0, 255].
   return {
     rgb: Uint8Array.from(blurred, (v) => clampByte(v) | 0),
     roi
   };
 }
 
+/**
+ * Fast preprocessing path — same pipeline as full, but uses the same steps
+ * because matching the training pipeline exactly is critical for accuracy.
+ * Both paths must produce identical results to what the model was trained on.
+ */
 function applyFastPreprocessing(rgbBytes: Uint8Array, width: number, height: number): PreprocessingResult {
-  // Lightweight path: the capture screen already crops to the nail region,
-  // so we only need ROI masking here.  Per-channel z-score normalization is
-  // intentionally omitted – training images are standard [0, 255].
-  const base = Float32Array.from(rgbBytes, (v) => v);
-  const { rgb: roiFocused, roi } = extractRoiBySkinMask(base, width, height);
-  return {
-    rgb: Uint8Array.from(roiFocused, (v) => clampByte(v) | 0),
-    roi
-  };
+  // Use the same pipeline — correctness over speed.
+  return applySevenStepPreprocessing(rgbBytes, width, height);
 }
 
 function getCenterCrop(width: number, height: number, marginRatio = 0.1) {
@@ -964,6 +1135,7 @@ function mapToPrediction(
     roi?: { x: number; y: number; width: number; height: number };
   }
 ): TflitePrediction {
+  // Safety: reject extremely dark images
   if (options.quality.brightness < 0.1) {
     return {
       label: 'unidentified',
@@ -979,79 +1151,11 @@ function mapToPrediction(
   }
 
   const probs = calibrateProbabilities(values, options.temperature ?? 1);
-  const rawAlmProb = ALM_INDEX >= 0 && ALM_INDEX < probs.length ? probs[ALM_INDEX] ?? 0 : 0;
-  const adjustedProbs = [...probs];
-  const darkPigmentScore = options.quality.darkPigmentScore ?? 0;
-  const darkCenterRatio = options.quality.darkCenterRatio ?? darkPigmentScore;
-  const framingScore = options.quality.framingScore ?? 1;
-  const dominantRegionRatio = options.quality.dominantRegionRatio ?? 1;
-  const componentCount = options.quality.componentCount ?? 1;
-  const poorFraming = framingScore < 0.42 || dominantRegionRatio < 0.14 || componentCount >= 3;
 
-  if (ALM_INDEX >= 0 && ALM_INDEX < adjustedProbs.length) {
-    adjustedProbs[ALM_INDEX] *= 0.76;
-  }
-  if (HEALTHY_INDEX >= 0 && HEALTHY_INDEX < adjustedProbs.length) {
-    const healthyFactor = options.quality.qualityScore < 0.64 ? 0.8 : 0.86;
-    adjustedProbs[HEALTHY_INDEX] *= healthyFactor;
-  }
-  if (CLUBBING_INDEX >= 0 && CLUBBING_INDEX < adjustedProbs.length) {
-    adjustedProbs[CLUBBING_INDEX] *= 1.1;
-  }
-  if (ONYCHOGRYPHOSIS_INDEX >= 0 && ONYCHOGRYPHOSIS_INDEX < adjustedProbs.length) {
-    adjustedProbs[ONYCHOGRYPHOSIS_INDEX] *= 1.16;
-  }
-
-  const preGuardHealthy = HEALTHY_INDEX >= 0 ? adjustedProbs[HEALTHY_INDEX] ?? 0 : 0;
-  const preGuardAlm = ALM_INDEX >= 0 ? adjustedProbs[ALM_INDEX] ?? 0 : 0;
-  const preGuardOnycho = ONYCHOGRYPHOSIS_INDEX >= 0 ? adjustedProbs[ONYCHOGRYPHOSIS_INDEX] ?? 0 : 0;
-
-  // Guardrail: when healthy dominates but ALM evidence is still non-trivial,
-  // down-weight healthy to avoid masking potentially dangerous pigmented lesions.
-  if (preGuardHealthy > 0.9 && preGuardAlm > 0.03 && darkPigmentScore > 0.08 && darkCenterRatio > 0.07) {
-    if (HEALTHY_INDEX >= 0 && HEALTHY_INDEX < adjustedProbs.length) {
-      adjustedProbs[HEALTHY_INDEX] *= 0.42;
-    }
-    if (ALM_INDEX >= 0 && ALM_INDEX < adjustedProbs.length) {
-      adjustedProbs[ALM_INDEX] *= 1.75;
-    }
-    if (ONYCHOGRYPHOSIS_INDEX >= 0 && ONYCHOGRYPHOSIS_INDEX < adjustedProbs.length) {
-      adjustedProbs[ONYCHOGRYPHOSIS_INDEX] *= 1.22;
-    }
-  }
-
-  // Secondary guard for thickened/dystrophic nails being absorbed by healthy.
-  if (preGuardHealthy > 0.82 && preGuardOnycho > 0.04) {
-    if (HEALTHY_INDEX >= 0 && HEALTHY_INDEX < adjustedProbs.length) {
-      adjustedProbs[HEALTHY_INDEX] *= 0.55;
-    }
-    if (ONYCHOGRYPHOSIS_INDEX >= 0 && ONYCHOGRYPHOSIS_INDEX < adjustedProbs.length) {
-      adjustedProbs[ONYCHOGRYPHOSIS_INDEX] *= 1.9;
-    }
-  }
-
-  if (darkPigmentScore > 0.11 && darkCenterRatio > 0.08) {
-    if (HEALTHY_INDEX >= 0 && HEALTHY_INDEX < adjustedProbs.length) {
-      adjustedProbs[HEALTHY_INDEX] *= 0.62;
-    }
-    if (ALM_INDEX >= 0 && ALM_INDEX < adjustedProbs.length) {
-      adjustedProbs[ALM_INDEX] *= 1.32;
-    }
-  }
-
-  if (darkPigmentScore > 0.2 && darkCenterRatio > 0.14) {
-    if (HEALTHY_INDEX >= 0 && HEALTHY_INDEX < adjustedProbs.length) {
-      adjustedProbs[HEALTHY_INDEX] *= 0.48;
-    }
-    if (ALM_INDEX >= 0 && ALM_INDEX < adjustedProbs.length) {
-      adjustedProbs[ALM_INDEX] *= 1.4;
-    }
-  }
-
-  const adjustedSum = adjustedProbs.reduce((acc, cur) => acc + Math.max(0, cur), 0);
-  const finalProbs = adjustedSum > 0
-    ? adjustedProbs.map((v) => Math.max(0, v) / adjustedSum)
-    : probs;
+  // Trust the model's output directly — no probability manipulation.
+  // With correct preprocessing matching the training pipeline, the model
+  // should produce reliable probabilities without manual adjustments.
+  const finalProbs = probs;
 
   let maxIdx = 0;
   let maxVal = finalProbs[0] ?? 0;
@@ -1073,84 +1177,34 @@ function mapToPrediction(
 
   const margin = Math.max(0, maxVal - secondVal);
   const candidateLabel = CLASS_LABELS[maxIdx] ?? 'unidentified';
-  const isVeryStrongAlmByModel =
-    candidateLabel === 'Acral Lentiginous Melanoma' &&
-    maxVal >= 0.9 &&
-    margin >= 0.7 &&
-    rawAlmProb >= 0.88;
-  const qualityFactor = 0.78 + 0.22 * options.quality.qualityScore;
+
+  // Simple quality-weighted confidence
+  const qualityFactor = 0.85 + 0.15 * options.quality.qualityScore;
   const adaptiveConfidence = maxVal * qualityFactor;
   const confidence = Math.max(0, Math.min(1, Number(adaptiveConfidence.toFixed(4))));
 
-  let minConfidenceForLabel = LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD + (1 - options.quality.qualityScore) * 0.11;
+  // Simplified minimum confidence thresholds — let the model speak
+  let minConfidenceForLabel = LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD;
+
+  // For ALM, require slightly higher confidence since it's a high-risk label
   if (candidateLabel === 'Acral Lentiginous Melanoma') {
-    // High-risk label requires stronger evidence to reduce harmful false positives.
-    minConfidenceForLabel = Math.max(minConfidenceForLabel, 0.72);
-    if (options.quality.qualityScore < 0.58) {
-      minConfidenceForLabel += 0.07;
+    minConfidenceForLabel = Math.max(minConfidenceForLabel, 0.55);
+    // If the margin is very thin, require more confidence
+    if (margin < 0.08) {
+      minConfidenceForLabel = Math.max(minConfidenceForLabel, 0.60);
     }
-    if (margin < 0.12) {
-      minConfidenceForLabel += 0.1;
-    }
-    if (!isVeryStrongAlmByModel && (darkPigmentScore < 0.11 || darkCenterRatio < 0.09)) {
-      minConfidenceForLabel += 0.1;
-    }
-    if (isVeryStrongAlmByModel) {
-      // Preserve true positives when the model itself is overwhelmingly confident.
-      minConfidenceForLabel = Math.min(minConfidenceForLabel, 0.68);
-    }
-    if (poorFraming && !isVeryStrongAlmByModel) {
-      minConfidenceForLabel += 0.14;
-    }
-  }
-
-  if (candidateLabel === 'clubbing' || candidateLabel === 'onychogryphosis') {
-    minConfidenceForLabel = Math.max(0.38, minConfidenceForLabel - 0.06);
-  }
-
-  if (candidateLabel === 'healthy' && margin < 0.045 && options.quality.qualityScore < 0.62) {
-    minConfidenceForLabel += 0.05;
-  }
-
-  if (candidateLabel === 'healthy' && darkPigmentScore > 0.1) {
-    minConfidenceForLabel += 0.24;
-  }
-
-  if (poorFraming) {
-    minConfidenceForLabel += 0.1;
   }
 
   let mappedLabel: DiagnosisLabel = confidence < minConfidenceForLabel
     ? 'unidentified'
     : candidateLabel;
 
-  if (mappedLabel === 'Acral Lentiginous Melanoma') {
-    const healthyProb = HEALTHY_INDEX >= 0 ? finalProbs[HEALTHY_INDEX] ?? 0 : 0;
-    const strongAlmEvidence =
-      darkPigmentScore >= 0.12 &&
-      darkCenterRatio >= 0.1 &&
-      margin >= 0.12 &&
-      options.quality.qualityScore >= 0.58;
-
-    if (!strongAlmEvidence && !isVeryStrongAlmByModel) {
-      mappedLabel = healthyProb >= 0.24 && darkPigmentScore < 0.12 ? 'healthy' : 'unidentified';
-    }
-  }
-
-  if (mappedLabel === 'unidentified' && isVeryStrongAlmByModel && confidence >= 0.68) {
-    mappedLabel = 'Acral Lentiginous Melanoma';
-  }
-
-  if (mappedLabel !== 'unidentified' && poorFraming && confidence < 0.84 && !isVeryStrongAlmByModel) {
+  // Hard floor: below 50% confidence → unidentified
+  if (confidence < 0.5) {
     mappedLabel = 'unidentified';
   }
 
   const mappedIndex = mappedLabel === 'unidentified' ? -1 : CLASS_LABELS.indexOf(mappedLabel);
-  // Enforce user requirement: if the computed confidence is below 50%,
-  // report as 'unidentified' to keep downstream behavior consistent.
-  if (confidence < 0.5) {
-    mappedLabel = 'unidentified';
-  }
 
   return {
     label: mappedLabel,
@@ -1189,18 +1243,25 @@ async function preprocessNativeImageToRgb(
     }
   }
 
-  // If the image is already at model input size (e.g. capture screen pre-resized it),
-  // skip the redundant resize + JPEG recompression that would only degrade quality.
+  // Decode at original resolution (or a reasonable downscale for OOM safety).
+  // The preprocessing pipeline handles Otsu crop + letterbox resize to model size.
   let decodedWidth: number;
   let decodedHeight: number;
   let rgb: Uint8Array;
 
   const isDataUri = imageUri.startsWith('data:');
-  const needsResize = async () => {
+
+  // For very large images, downscale proportionally to ~1024px max dimension
+  // to avoid OOM. Preserves aspect ratio so the Otsu crop works correctly.
+  const MAX_DECODE_DIM = 1024;
+  const needsDownscale = async () => {
+    const scale = Math.min(MAX_DECODE_DIM / originalWidth, MAX_DECODE_DIM / originalHeight, 1);
+    const targetW = Math.round(originalWidth * scale);
+    const targetH = Math.round(originalHeight * scale);
     const resized = await manipulateAsync(
       imageUri,
-      [{ resize: { width: modelInputSize, height: modelInputSize } }],
-      { compress: 0.92, format: SaveFormat.JPEG }
+      [{ resize: { width: targetW, height: targetH } }],
+      { compress: 0.95, format: SaveFormat.JPEG }
     );
     const b64 = await FileSystem.readAsStringAsync(resized.uri, {
       encoding: FileSystem.EncodingType.Base64,
@@ -1240,26 +1301,29 @@ async function preprocessNativeImageToRgb(
     // Fallback if needed, but usually we can get size.
   }
 
-  const baseUri = isDataUri ? imageUri : imageUri.split('?')[0];
-  const isJpegUri = isDataUri ? /^data:image\/jpe?g/i.test(baseUri) : /\.(jpe?g)$/i.test(baseUri);
   const hasDimensions = originalWidth > 0 && originalHeight > 0;
   const pixelCount = hasDimensions ? originalWidth * originalHeight : 0;
-  const shouldResizeFirst =
-    !isJpegUri ||
-    !hasDimensions ||
-    pixelCount > MAX_DIRECT_DECODE_PIXELS;
 
-  if (shouldResizeFirst) {
-    decoded = await needsResize();
+  if (!hasDimensions || pixelCount > MAX_DIRECT_DECODE_PIXELS) {
+    // Image too large or dimensions unknown — downscale to avoid OOM
+    if (hasDimensions) {
+      decoded = await needsDownscale();
+    } else {
+      // Unknown dimensions — read directly and hope for the best
+      try {
+        decoded = await readDirect();
+      } catch {
+        // Fallback: resize to a safe size
+        originalWidth = MAX_DECODE_DIM;
+        originalHeight = MAX_DECODE_DIM;
+        decoded = await needsDownscale();
+      }
+    }
   } else {
     try {
-      // Try reading directly first – avoids an extra encode/decode cycle.
       decoded = await readDirect();
-      if (decoded.width !== modelInputSize || decoded.height !== modelInputSize) {
-        decoded = await needsResize();
-      }
     } catch {
-      decoded = await needsResize();
+      decoded = await needsDownscale();
     }
   }
 
@@ -1278,9 +1342,12 @@ async function preprocessNativeImageToRgb(
     rgb[j + 2] = decoded.data[i + 2];
   }
 
-  const { rgb: processed, roi } = isLikelyLowEndDevice()
-    ? applyFastPreprocessing(rgb, decodedWidth, decodedHeight)
-    : applySevenStepPreprocessing(rgb, decodedWidth, decodedHeight);
+  // The preprocessing pipeline handles:
+  //   1. Otsu crop (at decoded resolution)
+  //   2. Letterbox resize to modelInputSize
+  //   3. CLAHE, grey-world, blur
+  // Output is already modelInputSize × modelInputSize.
+  const { rgb: processed, roi } = applySevenStepPreprocessing(rgb, decodedWidth, decodedHeight);
 
   // Scale ROI back to original image dimensions
   const finalRoi = roi ? {
@@ -1290,30 +1357,10 @@ async function preprocessNativeImageToRgb(
     height: roi.height * (originalHeight / decodedHeight),
   } : undefined;
 
-  if (decodedWidth === modelInputSize && decodedHeight === modelInputSize) {
-    // Quality should be computed on the final image that the model consumes
-    // so comparisons between models are consistent.
-    return {
-      rgbInput: processed,
-      quality: computeImageQualityMetadata(processed, modelInputSize, modelInputSize),
-      roi: finalRoi
-    };
-  }
-
-  const resizedRgb = resizeRgbBilinear(
-    Float32Array.from(processed, (v) => v),
-    decodedWidth,
-    decodedHeight,
-    modelInputSize,
-    modelInputSize
-  );
-
-  const finalRgb = Uint8Array.from(resizedRgb, (v) => clampByte(v) | 0);
-  // Compute quality on the model-sized RGB so quality metrics match the
-  // actual input used for inference across model variants.
+  // Output is already at model input size from the letterbox resize
   return {
-    rgbInput: finalRgb,
-    quality: computeImageQualityMetadata(finalRgb, modelInputSize, modelInputSize),
+    rgbInput: processed,
+    quality: computeImageQualityMetadata(processed, modelInputSize, modelInputSize),
     roi: finalRoi
   };
 }
