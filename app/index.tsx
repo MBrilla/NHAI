@@ -55,11 +55,11 @@ export default function SplashRoute() {
           borderWidth={1.4}
           style={styles.logoTile}
         >
-          <Image source={require('@/assets/images/nailscan-mini-logo.png')} style={styles.logoImage} resizeMode="contain" />
+          <Image source={require('@/assets/images/logo.png')} style={styles.logoImage} resizeMode="contain" />
         </GlassView>
 
         <Text style={styles.name}>NailScan</Text>
-        
+
         <View style={styles.taglinePill}>
           <Text style={styles.taglineText}>AI Nail Health Analysis</Text>
         </View>

@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions, SafeAreaView, StatusBar, Platform } from 'react-native';
 
-import { ScreenShell } from '@/components/nailscan/screen-shell';
+
 import { GlassView } from '@/components/nailscan/glass-view';
 import * as ImagePicker from 'expo-image-picker';
 import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
@@ -27,14 +28,23 @@ export default function CaptureScreen() {
 
   if (!permission.granted) {
     return (
-      <ScreenShell>
-        <View style={styles.permissionContainer}>
-          <Text style={styles.permissionText}>We need your permission to show the camera</Text>
-          <Pressable onPress={requestPermission} style={styles.permissionBtn}>
-            <Text style={styles.permissionBtnText}>Grant Permission</Text>
-          </Pressable>
-        </View>
-      </ScreenShell>
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+          locations={[0, 0.34, 0.72, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 0 }}>
+          <View style={styles.permissionContainer}>
+            <Text style={styles.permissionText}>We need your permission to show the camera</Text>
+            <Pressable onPress={requestPermission} style={styles.permissionBtn}>
+              <Text style={styles.permissionBtnText}>Grant Permission</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -79,8 +89,18 @@ export default function CaptureScreen() {
   const isTallScreen = screenHeight > 800;
 
   return (
-    <ScreenShell variant="default">
-      <View style={styles.container}>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+        locations={[0, 0.34, 0.72, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 0 }}>
+        <View style={styles.contentWrapper}>
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.headerIconBtn}>
@@ -192,8 +212,9 @@ export default function CaptureScreen() {
           </Pressable>
         </View>
       </View>
-    </ScreenShell>
-  );
+    </SafeAreaView>
+  </View>
+);
 }
 
 function TipItem({ icon, label }: { icon: any, label: string }) {
@@ -210,6 +231,10 @@ function TipItem({ icon, label }: { icon: any, label: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   header: {
     flexDirection: 'row',
@@ -350,7 +375,7 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     gap: scale(12),
-    marginBottom: verticalScale(10),
+    marginBottom: verticalScale(35),
   },
   actionBtn: {
     flex: 1,

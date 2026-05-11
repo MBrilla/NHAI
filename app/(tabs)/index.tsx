@@ -2,26 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Image, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/nailscan/glass-view';
-import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 import { preloadTfliteModel } from '@/services/tflite-inference';
-import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
 
 export default function HomeScreen() {
   const router = useRouter();
   const colors = useNailScanColors();
-  const { height: screenHeight } = useWindowDimensions();
 
-  // Animation refs
   const fadeRef = useRef(new Animated.Value(0)).current;
   const slideRef = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    // Start pre-loading and warming up models as soon as the app starts
-    // to ensure zero-latency inference later.
     preloadTfliteModel().catch(console.warn);
 
     Animated.parallel([
@@ -44,12 +38,10 @@ export default function HomeScreen() {
     router.push('/capture');
   };
 
-  // Adjust layout based on screen height to avoid pushing button off-screen
-  const isTallScreen = screenHeight > 800;
-
   return (
-    <ScreenShell variant="default">
-      <Animated.View style={[styles.container, { opacity: fadeRef, transform: [{ translateY: slideRef }] }]}>
+    <View style={styles.container}>
+      <Animated.View style={[styles.animatedContainer, { opacity: fadeRef, transform: [{ translateY: slideRef }] }]}>
+        {/* Exact background gradient */}
         <LinearGradient
           colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
           locations={[0, 0.34, 0.72, 1]}
@@ -57,55 +49,72 @@ export default function HomeScreen() {
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={[styles.glow, { top: -60, right: -60, width: 190, height: 190, borderRadius: 95, opacity: 0.33 }]} />
-        <View style={[styles.glow, { top: 170, left: -75, width: 180, height: 180, borderRadius: 90, opacity: 0.20 }]} />
-        <View style={[styles.glow, { bottom: 80, right: -45, width: 150, height: 150, borderRadius: 75, opacity: 0.20 }]} />
-        
-        {/* Header Section */}
-        <View style={styles.header}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>NailScan</Text>
-            <Text style={styles.subtitle}>AI Nail Health Analysis</Text>
-            <Text style={styles.description}>
-              Scan your fingernail for fast AI-powered nail health screening.
-            </Text>
+
+        {/* Restored Soft Circles with extremely low opacity to prevent hard blob effect on Android, 
+            while restoring the missing top-left glow. */}
+        <View style={[styles.softCircle, { top: -60, right: -60, width: 190, height: 190, borderRadius: 95, backgroundColor: 'rgba(255,255,255,0.18)' }]} />
+        <View style={[styles.softCircle, { top: -80, left: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: 'rgba(255,255,255,0.25)' }]} />
+        <View style={[styles.softCircle, { bottom: 80, right: -45, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.12)' }]} />
+
+        {/* Bokeh Dots (exact Flutter positioning) */}
+        <View style={[styles.bokehDot, { left: '8%', top: '13%', width: 30, height: 30, borderRadius: 15, opacity: 0.14 }]} />
+        <View style={[styles.bokehDot, { left: '73%', top: '18%', width: 42, height: 42, borderRadius: 21, opacity: 0.14 }]} />
+        <View style={[styles.bokehDot, { left: '92%', top: '8%', width: 24, height: 24, borderRadius: 12, opacity: 0.18 }]} />
+        <View style={[styles.bokehDot, { left: '20%', top: '55%', width: 20, height: 20, borderRadius: 10, opacity: 0.12 }]} />
+        <View style={[styles.bokehDot, { left: '82%', top: '61%', width: 40, height: 40, borderRadius: 20, opacity: 0.12 }]} />
+        <View style={[styles.bokehDot, { left: '48%', top: '86%', width: 26, height: 26, borderRadius: 13, opacity: 0.12 }]} />
+
+        {/* SafeArea padding simulation to exactly match Flutter's 20px padding */}
+        <View style={styles.safeArea}>
+
+          {/* Header Section */}
+          <View style={styles.header}>
+            <View style={styles.headerTextCol}>
+              <Text style={styles.title}>NailScan</Text>
+              <View style={{ height: 3 }} />
+              <Text style={styles.subtitle}>AI Nail Health Analysis</Text>
+              <View style={{ height: 12 }} />
+              <Text style={styles.description}>
+                Scan your fingernail for fast AI-powered nail health screening.
+              </Text>
+            </View>
+            <View style={{ width: 14 }} />
+
+            <GlassView style={styles.logoBox} intensity={34}>
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </GlassView>
           </View>
-          <GlassView style={styles.logoBox} intensity={44}>
-            <Image
-              source={require('@/assets/images/nailscan-mini-logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
+
+          <View style={styles.spacer} />
+
+          {/* Feature Section */}
+          <GlassView style={styles.featureSection} intensity={34}>
+            <FeatureCard
+              icon="flash"
+              title="Instant Analysis"
+              subtitle="Get results in seconds."
+              showDivider
+            />
+            <FeatureCard
+              icon="time"
+              title="Scan History"
+              subtitle="View your previous scans."
+              showDivider
+            />
+            <FeatureCard
+              icon="lock-closed"
+              title="Private & Secure"
+              subtitle="Your data is stored only on your device."
             />
           </GlassView>
-        </View>
 
-        <View style={isTallScreen ? styles.spacerLarge : styles.spacerSmall} />
+          <View style={styles.spacer} />
 
-        {/* Feature Section */}
-        <GlassView style={styles.featureSection} intensity={34}>
-          <FeatureCard
-            icon="flash-outline"
-            title="Instant Analysis"
-            subtitle="Get results in seconds."
-            showDivider
-          />
-          <FeatureCard
-            icon="time-outline"
-            title="Scan History"
-            subtitle="View your previous scans."
-            showDivider
-          />
-          <FeatureCard
-            icon="lock-closed-outline"
-            title="Private & Secure"
-            subtitle="Your data is stored only on your device."
-          />
-        </GlassView>
-
-        <View style={isTallScreen ? styles.spacerLarge : styles.spacerSmall} />
-
-        {/* Start Button */}
-        <View style={styles.buttonWrapper}>
+          {/* Start Button */}
           <Pressable onPress={handleStartDiagnosis} style={styles.startButtonContainer}>
             <View style={styles.startButton}>
               <LinearGradient
@@ -114,16 +123,26 @@ export default function HomeScreen() {
                 end={{ x: 1, y: 0.5 }}
                 style={StyleSheet.absoluteFillObject}
               />
-              <View style={styles.startButtonHighlight} />
+              <View style={styles.startButtonBorder} />
+              <View style={styles.startButtonHighlight}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.23)', 'rgba(255,255,255,0)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              </View>
               <View style={styles.startButtonRow}>
-                <Ionicons name="sparkles" size={moderateScale(22)} color="white" />
+                <Ionicons name="sparkles" size={22} color="white" />
+                <View style={{ width: 10 }} />
                 <Text style={styles.startButtonText}>Start Scan</Text>
               </View>
             </View>
           </Pressable>
+
         </View>
       </Animated.View>
-    </ScreenShell>
+    </View>
   );
 }
 
@@ -135,15 +154,16 @@ interface FeatureCardProps {
 }
 
 function FeatureCard({ icon, title, subtitle, showDivider }: FeatureCardProps) {
-  const colors = useNailScanColors();
   return (
-    <View style={styles.featureCardContainer}>
+    <View>
       <View style={styles.featureCardRow}>
         <View style={styles.featureIconBox}>
-          <Ionicons name={icon as any} size={moderateScale(28)} color={colors.primary} />
+          <Ionicons name={icon as any} size={28} color="#0B5CFF" />
         </View>
+        <View style={{ width: 18 }} />
         <View style={styles.featureTextBox}>
           <Text style={styles.featureTitle}>{title}</Text>
+          <View style={{ height: 3 }} />
           <Text style={styles.featureSubtitle}>{subtitle}</Text>
         </View>
       </View>
@@ -155,80 +175,96 @@ function FeatureCard({ icon, title, subtitle, showDivider }: FeatureCardProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: verticalScale(10),
-    paddingBottom: verticalScale(120),
+    backgroundColor: '#EAF2FF',
   },
-  glow: {
+  animatedContainer: {
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight! + 20 : 60,
+    paddingHorizontal: 20,
+    paddingBottom: 42 + 86, // Add bottom padding to account for absolute tab bar height
+  },
+  softCircle: {
+    position: 'absolute',
+  },
+  bokehDot: {
     position: 'absolute',
     backgroundColor: '#FFFFFF',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 1,
-    shadowRadius: 20,
-    elevation: 10,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  headerText: {
+  headerTextCol: {
     flex: 1,
-    paddingRight: scale(14),
+    alignItems: 'flex-start',
   },
   title: {
-    fontSize: scaleFont(34),
+    fontSize: 34,
     fontWeight: '900',
     color: '#0A2A66',
     letterSpacing: -0.7,
   },
   subtitle: {
-    fontSize: scaleFont(18),
+    fontSize: 18,
     fontWeight: '700',
     color: '#46639A',
-    marginTop: verticalScale(3),
   },
   description: {
-    fontSize: scaleFont(16),
-    lineHeight: verticalScale(22),
+    fontSize: 16,
+    lineHeight: 22.4, // 1.4 height
     fontWeight: '600',
     color: '#5F79A6',
-    marginTop: verticalScale(12),
   },
   logoBox: {
-    width: moderateScale(62),
-    height: moderateScale(62),
-    padding: moderateScale(9),
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 62,
+    height: 62,
+    padding: 9,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.44)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.75)',
+    shadowColor: '#0B5CFF',
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 18,
+    shadowOpacity: 0.12,
+    elevation: 0, // Fixes Android solid white background bug on semi-transparent views
   },
   logoImage: {
     width: '100%',
     height: '100%',
   },
-  spacerSmall: {
-    height: verticalScale(20),
-  },
-  spacerLarge: {
+  spacer: {
     flex: 1,
-    minHeight: verticalScale(20),
   },
   featureSection: {
     width: '100%',
-    paddingHorizontal: scale(22),
-    paddingVertical: verticalScale(10),
-  },
-  featureCardContainer: {
-    width: '100%',
+    paddingTop: 18,
+    paddingBottom: 18,
+    paddingHorizontal: 22,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.34)',
+    borderWidth: 1.6,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    // Fake the shadow via GlassView wrapper container styles or keep it here
+    shadowColor: '#0B5CFF',
+    shadowOffset: { width: 0, height: 18 },
+    shadowRadius: 34,
+    shadowOpacity: 0.12,
+    elevation: 0, // Fixes Android solid white background bug
+    overflow: 'hidden',
   },
   featureCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: verticalScale(14),
+    paddingVertical: 18,
   },
   featureIconBox: {
-    width: moderateScale(56),
-    height: moderateScale(56),
-    borderRadius: moderateScale(28),
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: 'rgba(255, 255, 255, 0.34)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.54)',
@@ -236,58 +272,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   featureTextBox: {
-    marginLeft: scale(18),
     flex: 1,
   },
   featureTitle: {
-    fontSize: scaleFont(16),
+    fontSize: 16,
     fontWeight: '900',
     color: '#0A2A66',
   },
   featureSubtitle: {
-    fontSize: scaleFont(14),
+    fontSize: 14,
     fontWeight: '600',
     color: '#6B84A8',
-    marginTop: verticalScale(3),
   },
   divider: {
     height: 1,
     backgroundColor: 'rgba(10, 42, 102, 0.08)',
   },
-  scrollContent: {
-    paddingTop: 20,
-    // Clear the 68px absolute tab bar
-    paddingBottom: 100,
-    gap: 14,
-  },
-  buttonWrapper: {
-    width: '100%',
-    paddingBottom: verticalScale(16),
-  },
   startButtonContainer: {
     width: '100%',
-    height: moderateScale(64),
+    height: 62,
+    borderRadius: 32,
+    backgroundColor: '#0B5CFF', // Required for Android to cast elevation shadow
+    shadowColor: '#0B5CFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 28,
+    shadowOpacity: 0.36,
+    elevation: 12,
   },
   startButton: {
     flex: 1,
-    borderRadius: moderateScale(32),
+    borderRadius: 32,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#0B5CFF',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.36,
-    shadowRadius: 28,
-    elevation: 12,
-    overflow: 'hidden',
+  },
+  startButtonBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
   },
   startButtonHighlight: {
     position: 'absolute',
     top: 0,
-    left: scale(22),
-    right: scale(22),
-    height: verticalScale(28),
-    backgroundColor: 'rgba(255, 255, 255, 0.23)',
+    left: 22,
+    right: 22,
+    height: 28,
     borderRadius: 999,
+    overflow: 'hidden',
   },
   startButtonRow: {
     flexDirection: 'row',
@@ -295,13 +327,8 @@ const styles = StyleSheet.create({
   },
   startButtonText: {
     color: 'white',
-    fontSize: scaleFont(18),
+    fontSize: 18,
     fontWeight: '900',
-    marginLeft: scale(10),
     letterSpacing: 0.2,
   },
 });
-
-
-
-

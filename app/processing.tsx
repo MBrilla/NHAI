@@ -1,19 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, StyleSheet, Text, View, Image, Pressable } from 'react-native';
+import { Alert, Animated, Easing, Image, Pressable, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { ScreenShell } from '@/components/nailscan/screen-shell';
+
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
-import {
-    getTfliteRuntimeMode,
-    preloadTfliteModel,
-    runTfliteInference,
-    type TflitePrediction,
-    type TfliteRuntimeMode,
-} from '@/services/tflite-inference';
 import { addScanHistoryEntry } from '@/services/scan-history';
-import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
+import {
+  getTfliteRuntimeMode,
+  preloadTfliteModel,
+  runTfliteInference,
+  type TflitePrediction,
+  type TfliteRuntimeMode,
+} from '@/services/tflite-inference';
+import { moderateScale, scale, scaleFont, verticalScale } from '@/utils/ui';
 
 const INFERENCE_TIMEOUT_MS = 25000;
 
@@ -26,11 +27,11 @@ export default function ProcessingScreen() {
   const [runtimeMode, setRuntimeMode] = useState<TfliteRuntimeMode>('native-fallback');
   const [phaseText, setPhaseText] = useState('Preparing image for diagnosis');
   const routeTriggeredRef = useRef(false);
-  
+
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    preloadTfliteModel().catch(() => {});
+    preloadTfliteModel().catch(() => { });
     setRuntimeMode(getTfliteRuntimeMode());
 
     Animated.loop(
@@ -116,45 +117,60 @@ export default function ProcessingScreen() {
   });
 
   return (
-    <ScreenShell variant="default">
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={20} color="#06245C" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Diagnosis</Text>
-        </View>
-
-        <View style={styles.content}>
-          <Text style={styles.title}>Analyzing Nail Image</Text>
-          <Text style={styles.subtitle}>Our AI is carefully analyzing your nail to provide accurate results</Text>
-          
-          <View style={styles.ringContainer}>
-            <Animated.View style={[styles.ring, { transform: [{ rotate: rotation }] }]}>
-              <View style={styles.ringDot} />
-            </Animated.View>
-            <View style={styles.logoBox}>
-              <Image 
-                source={require('@/assets/images/nailscan-mini-logo.png')} 
-                style={styles.logo} 
-                resizeMode="contain"
-              />
-            </View>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+        locations={[0, 0.34, 0.72, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 0 }}>
+        <View style={styles.contentWrapper}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={20} color="#06245C" />
+            </Pressable>
+            <Text style={styles.headerTitle}>Diagnosis</Text>
           </View>
 
-          <Text style={styles.phaseText}>{phaseText}</Text>
-          <Text style={styles.waitText}>Please wait while NailScan processes your image</Text>
-          
-          <Ionicons name="hourglass-outline" size={moderateScale(42)} color="#0B55C7" style={styles.hourGlass} />
+          <View style={styles.content}>
+            <Text style={styles.title}>Analyzing Nail Image</Text>
+            <Text style={styles.subtitle}>Our AI is carefully analyzing your nail to provide accurate results</Text>
+
+            <View style={styles.ringContainer}>
+              <Animated.View style={[styles.ring, { transform: [{ rotate: rotation }] }]}>
+                <View style={styles.ringDot} />
+              </Animated.View>
+              <View style={styles.logoBox}>
+                <Image
+                  source={require('@/assets/images/logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              </View>
+            </View>
+
+            <Text style={styles.phaseText}>{phaseText}</Text>
+            <Text style={styles.waitText}>Please wait while NailScan processes your image</Text>
+
+            <Ionicons name="hourglass-outline" size={moderateScale(42)} color="#0B55C7" style={styles.hourGlass} />
+          </View>
         </View>
-      </View>
-    </ScreenShell>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   header: {
     flexDirection: 'row',

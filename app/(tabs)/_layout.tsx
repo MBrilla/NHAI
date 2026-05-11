@@ -26,9 +26,10 @@ export default function TabLayout() {
         ),
         tabBarStyle: {
           position: 'absolute',
+          bottom: 0,
           borderTopWidth: 1,
-          borderTopColor: 'rgba(207, 224, 255, 0.5)',
-          backgroundColor: 'rgba(255, 255, 255, 0.4)',
+          borderTopColor: '#EAF2FF',
+          backgroundColor: '#FFFFFF',
           height: 86,
           paddingBottom: 22,
           paddingTop: 12,
@@ -43,7 +44,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Diagnose',
+          title: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />
           ),

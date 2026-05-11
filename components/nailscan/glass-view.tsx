@@ -1,10 +1,10 @@
 import { BlurView } from 'expo-blur';
 import { ReactNode } from 'react';
-import { StyleSheet, View, ViewStyle, Platform } from 'react-native';
+import { StyleSheet, View, ViewStyle, Platform, StyleProp } from 'react-native';
 
 interface GlassViewProps {
   children: ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   intensity?: number;
   borderRadius?: number;
   borderColor?: string;

@@ -2,9 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
 
-import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { GlassView } from '@/components/nailscan/glass-view';
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 
@@ -18,30 +17,33 @@ export default function AboutScreen() {
   };
 
   return (
-    <ScreenShell variant="default">
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
-          locations={[0, 0.34, 0.72, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
-            <Ionicons name="chevron-back" size={20} color="#0B2E6F" />
-          </Pressable>
-          <Text style={styles.headerTitle}>About</Text>
-        </View>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+        locations={[0, 0.34, 0.72, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0 }}>
+        <View style={styles.contentWrapper}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
+              <Ionicons name="chevron-back" size={20} color="#0B2E6F" />
+            </Pressable>
+            <Text style={styles.headerTitle}>About</Text>
+          </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* Logo & Info */}
           <View style={styles.logoSection}>
             <GlassView style={styles.logoBox} intensity={40}>
-              <Image 
-                source={require('@/assets/images/nailscan-mini-logo.png')} 
-                style={styles.logoImage} 
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={styles.logoImage}
                 resizeMode="contain"
               />
             </GlassView>
@@ -117,8 +119,9 @@ export default function AboutScreen() {
           </View>
         </ScrollView>
       </View>
-    </ScreenShell>
-  );
+    </SafeAreaView>
+  </View>
+);
 }
 
 function ExpandableTile({ id, title, icon, isExpanded, onToggle, children }: any) {
@@ -129,10 +132,10 @@ function ExpandableTile({ id, title, icon, isExpanded, onToggle, children }: any
           <View style={styles.tileHeader}>
             <Ionicons name={icon} size={22} color="#0F62FE" />
             <Text style={styles.tileTitle}>{title}</Text>
-            <Ionicons 
-              name={isExpanded ? "chevron-down" : "chevron-forward"} 
-              size={20} 
-              color="#8AA6D6" 
+            <Ionicons
+              name={isExpanded ? "chevron-down" : "chevron-forward"}
+              size={20}
+              color="#8AA6D6"
             />
           </View>
           {isExpanded && (
@@ -169,6 +172,10 @@ function ConditionItem({ name, description, color }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   header: {
     flexDirection: 'row',

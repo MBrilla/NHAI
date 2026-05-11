@@ -3,9 +3,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
 
-import { ScreenShell } from '@/components/nailscan/screen-shell';
 import { GlassView } from '@/components/nailscan/glass-view';
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 import type { ScanHistoryEntry } from '@/services/scan-history';
@@ -76,106 +75,106 @@ export default function HistoryScreen() {
   };
 
   return (
-    <ScreenShell variant="default">
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
-          locations={[0, 0.34, 0.72, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <View style={[styles.glow, { top: -90, left: -70, width: 260, height: 260, borderRadius: 130, opacity: 0.24 }]} />
-        <View style={[styles.glow, { top: 120, right: -90, width: 230, height: 230, borderRadius: 115, opacity: 0.15 }]} />
-        <View style={[styles.glow, { bottom: 80, left: -100, width: 250, height: 250, borderRadius: 125, opacity: 0.16 }]} />
-        
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
-            <Ionicons name="chevron-back" size={20} color="#0B2E6F" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Scan History</Text>
-          <Pressable 
-            onPress={handleClearHistory} 
-            disabled={history.length === 0}
-            style={styles.headerIconBtn}
-          >
-            <Ionicons 
-              name="trash-outline" 
-              size={20} 
-              color={history.length === 0 ? '#B8C7E0' : '#FF6B6B'} 
-            />
-          </Pressable>
-        </View>
-        <Text style={styles.headerSubtitle}>View your past nail scan results</Text>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
+        locations={[0, 0.34, 0.72, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0 }}>
+        <View style={styles.contentWrapper}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
+              <Ionicons name="chevron-back" size={20} color="#0B2E6F" />
+            </Pressable>
+            <Text style={styles.headerTitle}>Scan History</Text>
+            <Pressable 
+              onPress={handleClearHistory} 
+              disabled={history.length === 0}
+              style={styles.headerIconBtn}
+            >
+              <Ionicons 
+                name="trash-outline" 
+                size={20} 
+                color={history.length === 0 ? '#B8C7E0' : '#FF6B6B'} 
+              />
+            </Pressable>
+          </View>
+          <Text style={styles.headerSubtitle}>View your past nail scan results</Text>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {history.length > 0 && (
-            <>
-              {/* Auto Save Card */}
-              <GlassView style={styles.autoSaveCard} intensity={86}>
-                <LinearGradient
-                  colors={['#5FA8FF', '#006DFF']}
-                  style={styles.autoSaveIconBox}
-                >
-                  <Ionicons name="checkmark-circle" size={30} color="white" />
-                </LinearGradient>
-                <View style={styles.autoSaveTextBox}>
-                  <Text style={styles.autoSaveTitle}>Results are automatically saved</Text>
-                  <Text style={styles.autoSaveText}>
-                    All your scan results are securely stored and can be viewed anytime.
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            {history.length > 0 && (
+              <>
+                {/* Auto Save Card */}
+                <GlassView style={styles.autoSaveCard} intensity={86}>
+                  <LinearGradient
+                    colors={['#5FA8FF', '#006DFF']}
+                    style={styles.autoSaveIconBox}
+                  >
+                    <Ionicons name="checkmark-circle" size={30} color="white" />
+                  </LinearGradient>
+                  <View style={styles.autoSaveTextBox}>
+                    <Text style={styles.autoSaveTitle}>Results are automatically saved</Text>
+                    <Text style={styles.autoSaveText}>
+                      All your scan results are securely stored and can be viewed anytime.
+                    </Text>
+                  </View>
+                </GlassView>
+
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>Recent Scans</Text>
+                  <Text style={styles.sectionCount}>
+                    {history.length} {history.length === 1 ? 'result' : 'results'}
                   </Text>
                 </View>
-              </GlassView>
+              </>
+            )}
 
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Recent Scans</Text>
-                <Text style={styles.sectionCount}>
-                  {history.length} {history.length === 1 ? 'result' : 'results'}
-                </Text>
+            {loading ? (
+              <View style={styles.loadingBox}>
+                <Text style={styles.loadingText}>Loading history...</Text>
               </View>
-            </>
-          )}
-
-          {loading ? (
-            <View style={styles.loadingBox}>
-              <Text style={styles.loadingText}>Loading history...</Text>
-            </View>
-          ) : history.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <GlassView style={styles.emptyCard} intensity={86}>
-                <View style={styles.emptyIconBox}>
-                  <Ionicons name="time" size={46} color="#006DFF" />
-                </View>
-                <Text style={styles.emptyTitle}>No History Yet</Text>
-                <Text style={styles.emptyText}>
-                  Your scan results will appear here after your first analysis.
-                </Text>
-              </GlassView>
-            </View>
-          ) : (
-            history.map((entry) => (
-              <HistoryCard 
-                key={entry.id} 
-                entry={entry} 
-                formattedDate={formatHistoryDate(entry.timestamp)}
-                onPress={() => {
-                  router.push({
-                    pathname: '/result',
-                    params: {
-                      label: entry.label,
-                      confidence: `${entry.confidence}`,
-                      imageUri: entry.imageUri || '',
-                    },
-                  });
-                }}
-                onDelete={() => handleDeleteItem(entry.id)}
-              />
-            ))
-          )}
-        </ScrollView>
-      </View>
-    </ScreenShell>
+            ) : history.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <GlassView style={styles.emptyCard} intensity={86}>
+                  <View style={styles.emptyIconBox}>
+                    <Ionicons name="time" size={46} color="#006DFF" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No History Yet</Text>
+                  <Text style={styles.emptyText}>
+                    Your scan results will appear here after your first analysis.
+                  </Text>
+                </GlassView>
+              </View>
+            ) : (
+              history.map((entry) => (
+                <HistoryCard 
+                  key={entry.id} 
+                  entry={entry} 
+                  formattedDate={formatHistoryDate(entry.timestamp)}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/result',
+                      params: {
+                        label: entry.label,
+                        confidence: `${entry.confidence}`,
+                        imageUri: entry.imageUri || '',
+                      },
+                    });
+                  }}
+                  onDelete={() => handleDeleteItem(entry.id)}
+                />
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -236,6 +235,10 @@ function HistoryCard({ entry, formattedDate, onPress, onDelete }: { entry: ScanH
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   glow: {
     position: 'absolute',
