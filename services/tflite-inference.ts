@@ -517,11 +517,14 @@ function erodeMask(mask: Uint8Array, width: number, height: number): Uint8Array 
   return out;
 }
 
-function findLargestMaskBoundingBox(mask: Uint8Array, width: number, height: number):
+function findBestNailMaskBoundingBox(mask: Uint8Array, width: number, height: number):
   | { minX: number; minY: number; maxX: number; maxY: number; area: number }
   | null {
   const visited = new Uint8Array(mask.length);
-  let best: { minX: number; minY: number; maxX: number; maxY: number; area: number } | null = null;
+  let best: { minX: number; minY: number; maxX: number; maxY: number; area: number; score: number } | null = null;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const maxDist = Math.sqrt(centerX * centerX + centerY * centerY);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -559,8 +562,17 @@ function findLargestMaskBoundingBox(mask: Uint8Array, width: number, height: num
         }
       }
 
-      if (!best || area > best.area) {
-        best = { minX, minY, maxX, maxY, area };
+      // Calculate score based on area and distance to center
+      const blobCx = (minX + maxX) / 2;
+      const blobCy = (minY + maxY) / 2;
+      const dist = Math.sqrt((blobCx - centerX) ** 2 + (blobCy - centerY) ** 2);
+      const centerFactor = 1 - (dist / (maxDist + 1e-6));
+      
+      // We want large blobs near the center
+      const score = area * (centerFactor * centerFactor);
+
+      if (!best || score > best.score) {
+        best = { minX, minY, maxX, maxY, area, score };
       }
     }
   }
@@ -665,15 +677,30 @@ function extractROIByOtsuCrop(
     gray[i] = Math.round(0.299 * rgb[idx] + 0.587 * rgb[idx + 1] + 0.114 * rgb[idx + 2]) | 0;
   }
 
-  // Step 2: Otsu's threshold
-  const threshold = computeOtsuThreshold(gray, total);
+  // Step 2: Otsu's threshold on a center-biased region
+  // We prioritize the central 60% area where the nail should be located.
+  const focusX1 = Math.floor(width * 0.2);
+  const focusX2 = Math.ceil(width * 0.8);
+  const focusY1 = Math.floor(height * 0.2);
+  const focusY2 = Math.ceil(height * 0.8);
+  const focusArea = (focusX2 - focusX1) * (focusY2 - focusY1);
+  const focusGray = new Uint8Array(focusArea);
+  
+  let fi = 0;
+  for (let y = focusY1; y < focusY2; y++) {
+    for (let x = focusX1; x < focusX2; x++) {
+      focusGray[fi++] = gray[y * width + x];
+    }
+  }
+
+  const threshold = computeOtsuThreshold(focusGray, focusArea);
   const mask = new Uint8Array(total);
   for (let i = 0; i < total; i++) {
     mask[i] = gray[i] > threshold ? 1 : 0;
   }
 
-  // Step 3: Find largest connected component
-  const best = findLargestMaskBoundingBox(mask, width, height);
+  // Step 3: Find best nail component (center-weighted)
+  const best = findBestNailMaskBoundingBox(mask, width, height);
 
   // Fallback: if no contour found or too small, use full image
   if (!best || best.area < total * 0.01) {
@@ -1043,8 +1070,8 @@ function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height
   const modelSize = getModelInputSize();
   const base = Float32Array.from(rgbBytes, (v) => v);
 
-  // Step 1: Otsu's threshold loose crop (matches training's loose_crop)
-  const { rgb: croppedRgb, cropW, cropH, roi } = extractROIByOtsuCrop(base, width, height, 0.35);
+  // Step 1: Otsu's threshold loose crop (tighter production padding for better zoom)
+  const { rgb: croppedRgb, cropW, cropH, roi } = extractROIByOtsuCrop(base, width, height, 0.25);
 
   // Step 2: Letterbox resize to model input size (preserves aspect ratio, black padding)
   const letterboxed = letterboxResizeRgb(croppedRgb, cropW, cropH, modelSize, modelSize);
@@ -1184,26 +1211,37 @@ function mapToPrediction(
   const adaptiveConfidence = maxVal * qualityFactor;
   const confidence = Math.max(0, Math.min(1, Number(adaptiveConfidence.toFixed(4))));
 
-  // Simplified minimum confidence thresholds — let the model speak
-  let minConfidenceForLabel = LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD;
-
-  // For ALM, require slightly higher confidence since it's a high-risk label
-  if (candidateLabel === 'Acral Lentiginous Melanoma') {
-    minConfidenceForLabel = Math.max(minConfidenceForLabel, 0.55);
-    // If the margin is very thin, require more confidence
-    if (margin < 0.08) {
-      minConfidenceForLabel = Math.max(minConfidenceForLabel, 0.60);
+  // Dynamic, risk-aware thresholding system
+  const getThresholdForLabel = (label: DiagnosisLabel, margin: number): number => {
+    switch (label) {
+      case 'Acral Lentiginous Melanoma':
+        // High risk: requires 55% base certainty, 60% if the margin is thin
+        return margin < 0.1 ? 0.60 : 0.55;
+      case 'clubbing':
+        // High risk systemic indicator: requires 50% certainty
+        return 0.50;
+      case 'onychogryphosis':
+        // Moderate risk: use standard threshold
+        return 0.44;
+      case 'healthy':
+        // Low risk: allow identifying healthy nails at slightly lower confidence (40%)
+        // provided the second-best guess isn't a high-risk condition.
+        const almProb = finalProbs[ALM_INDEX] ?? 0;
+        const clubbingProb = finalProbs[CLUBBING_INDEX] ?? 0;
+        if (almProb > 0.15 || clubbingProb > 0.18) {
+          return 0.55; // Raise threshold if a high-risk condition is "whispering"
+        }
+        return 0.40;
+      default:
+        return LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD;
     }
-  }
+  };
+
+  const minConfidenceForLabel = getThresholdForLabel(candidateLabel, margin);
 
   let mappedLabel: DiagnosisLabel = confidence < minConfidenceForLabel
     ? 'unidentified'
     : candidateLabel;
-
-  // Hard floor: below 50% confidence → unidentified
-  if (confidence < 0.5) {
-    mappedLabel = 'unidentified';
-  }
 
   const mappedIndex = mappedLabel === 'unidentified' ? -1 : CLASS_LABELS.indexOf(mappedLabel);
 
