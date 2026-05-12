@@ -85,6 +85,15 @@ export default function ProcessingScreen() {
     }
 
     if (prediction) {
+      // Check for high-risk quality flags (manicure or obstruction)
+      const hasManicure = prediction.qualityFlags.some(f => f.includes('polish'));
+      const hasObstruction = prediction.qualityFlags.some(f => f.includes('obstructed'));
+
+      if (hasManicure || hasObstruction) {
+        // We show the flags in the result screen instead of blocking, 
+        // as per clinical "Acknowledge & Proceed" pattern.
+      }
+
       routeTriggeredRef.current = true;
 
       // Save to history before navigating

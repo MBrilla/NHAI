@@ -325,6 +325,7 @@ function computeImageQualityMetadata(rgb: Uint8Array, width: number, height: num
   const sharpnessScore = clamp01((sharpness - 0.2) / 0.7);
   const centerScore = clamp01((centerFocus - 0.74) / 0.4);
   const framingScore = framing.framingScore;
+
   const qualityScore = clamp01(
     0.31 * exposureScore +
       0.24 * contrastScore +

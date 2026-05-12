@@ -109,22 +109,6 @@ export default function CaptureScreen() {
           <Text style={styles.headerTitle}>Nail Capture</Text>
         </View>
 
-        {/* Tips Card */}
-        <GlassView style={styles.tipsCard} intensity={62}>
-          <View style={styles.tipsHeader}>
-            <Ionicons name="sparkles" size={moderateScale(20)} color="#086BFF" />
-            <Text style={styles.tipsTitle}>For better scan results:</Text>
-          </View>
-          <View style={styles.tipsRow}>
-            <TipItem icon="contract" label={"Center\nthe nail"} />
-            <View style={styles.divider} />
-            <TipItem icon="sunny" label={"Use even\nlighting"} />
-            <View style={styles.divider} />
-            <TipItem icon="eye" label={"Clearly\nvisible"} />
-            <View style={styles.divider} />
-            <TipItem icon="hand-right" label={"Hold still\n1 sec"} />
-          </View>
-        </GlassView>
 
         {/* Camera Preview */}
         <View style={[styles.previewContainer, !isTallScreen && { marginVertical: 6 }]}>
@@ -217,16 +201,6 @@ export default function CaptureScreen() {
 );
 }
 
-function TipItem({ icon, label }: { icon: any, label: string }) {
-  return (
-    <View style={styles.tipItem}>
-      <View style={styles.tipIconBox}>
-        <Ionicons name={icon} size={moderateScale(20)} color="#086BFF" />
-      </View>
-      <Text style={styles.tipLabel}>{label}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -260,38 +234,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginRight: moderateScale(42),
     letterSpacing: -0.5,
-  },
-  tipsCard: {
-    marginTop: verticalScale(10),
-    padding: scale(12),
-  },
-  tipsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: verticalScale(10),
-  },
-  tipsTitle: {
-    fontSize: scaleFont(14),
-    fontWeight: '900',
-    color: '#086BFF',
-    marginLeft: scale(8),
-  },
-  tipsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  tipItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  tipIconBox: {
-    width: moderateScale(38),
-    height: moderateScale(38),
-    borderRadius: moderateScale(14),
-    backgroundColor: 'rgba(232, 243, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   tipLabel: {
     fontSize: scaleFont(9),
