@@ -11,6 +11,8 @@ export interface ScanHistoryEntry {
   confidence: number;
   timestamp: number;
   imageUri?: string;
+  originalImageUri?: string;
+  roi?: { x: number; y: number; width: number; height: number };
   runtimeMode?: TfliteRuntimeMode;
   inferenceTimeMs?: number;
 }
@@ -26,6 +28,17 @@ function sanitizeHistory(entries: ScanHistoryEntry[]): ScanHistoryEntry[] {
       const safeImageUri = typeof entry?.imageUri === 'string' && entry.imageUri.trim().length > 0
         ? entry.imageUri
         : undefined;
+      const safeOriginalImageUri = typeof entry?.originalImageUri === 'string' && entry.originalImageUri.trim().length > 0
+        ? entry.originalImageUri
+        : undefined;
+      const safeRoi = entry?.roi && typeof entry.roi === 'object' && 'x' in entry.roi
+        ? {
+            x: Number((entry.roi as any).x) || 0,
+            y: Number((entry.roi as any).y) || 0,
+            width: Number((entry.roi as any).width) || 0,
+            height: Number((entry.roi as any).height) || 0,
+          }
+        : undefined;
       const safeInferenceTimeMs = Number.isFinite(Number(entry?.inferenceTimeMs))
         ? Number(entry.inferenceTimeMs)
         : undefined;
@@ -36,6 +49,8 @@ function sanitizeHistory(entries: ScanHistoryEntry[]): ScanHistoryEntry[] {
         confidence: safeConfidence,
         timestamp: Number(entry?.timestamp ?? 0),
         imageUri: safeImageUri,
+        originalImageUri: safeOriginalImageUri,
+        roi: safeRoi,
         runtimeMode: safeRuntimeMode,
         inferenceTimeMs: safeInferenceTimeMs,
       } satisfies ScanHistoryEntry;

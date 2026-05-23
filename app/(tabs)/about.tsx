@@ -1,15 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
+import { Image, ImageBackground, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/nailscan/glass-view';
-import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 
 export default function AboutScreen() {
   const router = useRouter();
-  const colors = useNailScanColors();
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
   const toggleSection = (section: string) => {
@@ -17,15 +14,12 @@ export default function AboutScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
-        locations={[0, 0.34, 0.72, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
+    <ImageBackground
+      source={require('@/assets/images/background.png')}
+      style={styles.container}
+      resizeMode="cover"
+      imageStyle={{ opacity: 0.8 }}
+    >
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0 }}>
         <View style={styles.contentWrapper}>
@@ -38,99 +32,118 @@ export default function AboutScreen() {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Logo & Info */}
-          <View style={styles.logoSection}>
-            <GlassView style={styles.logoBox} intensity={40}>
-              <Image
-                source={require('@/assets/images/logo.png')}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            </GlassView>
-            <Text style={styles.appName}>NailScan</Text>
-            <Text style={styles.appTagline}>AI-Powered Nail Health Analysis</Text>
-            <Text style={styles.appVersion}>Version 1.0.0</Text>
-          </View>
-
-          <View style={styles.menuContainer}>
-            <ExpandableTile
-              id="what"
-              title="What is NailScan?"
-              icon="help-circle-outline"
-              isExpanded={expandedSection === 'what'}
-              onToggle={() => toggleSection('what')}
-            >
-              <Text style={styles.expandableText}>
-                NailScan is a mobile application designed to assist in identifying visible nail conditions using image analysis. It aims to provide quick preliminary screening based on nail appearance patterns.
-              </Text>
-            </ExpandableTile>
-
-            <ExpandableTile
-              id="how"
-              title="How It Works"
-              icon="flash-outline"
-              isExpanded={expandedSection === 'how'}
-              onToggle={() => toggleSection('how')}
-            >
-              <Text style={styles.expandableText}>
-                NailScan analyzes a captured or uploaded fingernail image and checks visible nail patterns such as color, shape, and texture.
-              </Text>
-              <View style={styles.stepRow}>
-                <StepNumber number={1} />
-                <Text style={styles.stepText}>Capture or upload a clear nail photo</Text>
+            {/* Logo & Info */}
+            <View style={styles.logoSection}>
+              <View style={styles.logoBox}>
+                <Image
+                  source={require('@/assets/images/logo.png')}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
-              <View style={styles.stepRow}>
-                <StepNumber number={2} />
-                <Text style={styles.stepText}>AI analyzes visible nail features</Text>
-              </View>
-              <View style={styles.stepRow}>
-                <StepNumber number={3} />
-                <Text style={styles.stepText}>Result appears with confidence score</Text>
-              </View>
-            </ExpandableTile>
+              <Text style={styles.appName}>NailScan</Text>
+              <Text style={styles.appTagline}>AI-Powered Nail Health Analysis</Text>
+              <Text style={styles.appVersion}>Version 1.0.0</Text>
+            </View>
 
-            <ExpandableTile
-              id="conditions"
-              title="Conditions Detected"
-              icon="medical-outline"
-              isExpanded={expandedSection === 'conditions'}
-              onToggle={() => toggleSection('conditions')}
-            >
-              <ConditionItem name="Acral Lentiginous Melanoma" description="Rare melanoma subtype often seen as a dark vertical streak." color="#0F62FE" />
-              <ConditionItem name="Onychogryphosis" description="Thickened, curved, claw-like nails that progress over time." color="#FFA043" />
-              <ConditionItem name="Nail Clubbing" description="Downward curving nails, can be linked to systemic disease." color="#8BB8FF" />
-              <ConditionItem name="Healthy Nail" description="Normal appearance with no visible abnormalities." color="#35C58A" />
-              <ConditionItem name="Unidentified" description="Low confidence scan, requires clearer image." color="#94A3B8" />
-            </ExpandableTile>
-
-            <ExpandableTile
-              id="notice"
-              title="Important Notice"
-              icon="warning-outline"
-              isExpanded={expandedSection === 'notice'}
-              onToggle={() => toggleSection('notice')}
-            >
-              <View style={styles.noticeBox}>
-                <Text style={styles.noticeText}>
-                  This app is intended for preliminary screening only and does not replace professional medical diagnosis. Always consult a qualified healthcare professional for medical advice.
+            <View style={styles.menuContainer}>
+              <ExpandableTile
+                id="what"
+                title="What is NailScan?"
+                customIcon={
+                  <View style={styles.smallLogoBox}>
+                    <Image
+                      source={require('@/assets/images/logo.png')}
+                      style={styles.smallLogoImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                }
+                isExpanded={expandedSection === 'what'}
+                onToggle={() => toggleSection('what')}
+              >
+                <Text style={styles.expandableText}>
+                  NailScan is a mobile application designed to assist in identifying visible nail conditions using image analysis. It aims to provide quick preliminary screening based on nail appearance patterns.
                 </Text>
-              </View>
-            </ExpandableTile>
-          </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
-  </View>
-);
+              </ExpandableTile>
+
+              <ExpandableTile
+                id="how"
+                title="How It Works"
+                icon="sparkles"
+                isExpanded={expandedSection === 'how'}
+                onToggle={() => toggleSection('how')}
+              >
+                <Text style={styles.expandableText}>
+                  NailScan analyzes a captured or uploaded fingernail image and checks visible nail patterns such as color, shape, and texture.
+                </Text>
+                <View style={styles.stepRow}>
+                  <StepNumber number={1} />
+                  <Text style={styles.stepText}>Capture or upload a clear nail photo</Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <StepNumber number={2} />
+                  <Text style={styles.stepText}>AI analyzes visible nail features</Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <StepNumber number={3} />
+                  <Text style={styles.stepText}>Result appears with confidence score</Text>
+                </View>
+              </ExpandableTile>
+
+              <ExpandableTile
+                id="conditions"
+                title="Conditions Detected"
+                icon="medical-outline"
+                isExpanded={expandedSection === 'conditions'}
+                onToggle={() => toggleSection('conditions')}
+              >
+                <ConditionItem name="Acral Lentiginous Melanoma" description="A serious type of melanoma that may appear as an irregular dark streak or band on the nail and can gradually widen, darken, or spread to nearby skin." color="#000103ff" />
+                <ConditionItem name="Beau's Lines" description="Horizontal grooves or dents across the nail plate caused by a temporary interruption in nail growth." color="#000103ff" />
+                <ConditionItem name="Blue Finger" description="Blue Finger is a condition where the fingernails appear blue or purplish, often due to a lack of oxygen in the blood." color="#000103ff" />
+                <ConditionItem name="Koilonychia" description="Concave or spoon-shaped nails commonly associated with iron deficiency anemia or related medical conditions." color="#000103ff" />
+                <ConditionItem name="Muehrcke's Lines" description="Multiple horizontal white lines across the fingernails that may be linked to low albumin levels or systemic conditions." color="#000103ff" />
+                <ConditionItem name="Nail Clubbing" description="Rounded and enlarged fingertips with downward nail curvature, possibly linked to underlying lung, heart, digestive, or systemic conditions." color="#000103ff" />
+                <ConditionItem name="Nail Pitting" description="Multiple small pin-like dents on the nail surface that may be associated with psoriasis, autoimmune diseases, or skin conditions." color="#000103ff" />
+                <ConditionItem name="Healthy Nails" description="Smooth, evenly shaped nails with consistent color and no visible grooves, dents, thickening, swelling, or deformity." color="#000103ff" />
+                <ConditionItem name="Unidentified" description="The image may be unclear, unsupported, or outside the current detection scope of the application." color="#000103ff" />
+              </ExpandableTile>
+
+              <ExpandableTile
+                id="notice"
+                title="Important Notice"
+                icon="warning-outline"
+                isExpanded={expandedSection === 'notice'}
+                onToggle={() => toggleSection('notice')}
+              >
+                <View style={styles.noticeBox}>
+                  <Text style={styles.noticeText}>
+                    This app is intended for preliminary screening only and does not replace professional medical diagnosis. Always consult a qualified healthcare professional for proper medical advice and treatment.
+                  </Text>
+                </View>
+              </ExpandableTile>
+            </View>
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    </ImageBackground>
+  );
 }
 
-function ExpandableTile({ id, title, icon, isExpanded, onToggle, children }: any) {
+function ExpandableTile({ id, title, icon, customIcon, isExpanded, onToggle, children }: any) {
   return (
     <View style={styles.tileWrapper}>
       <Pressable onPress={onToggle}>
-        <GlassView style={styles.tileContainer} intensity={92}>
+        <GlassView
+          style={styles.tileContainer}
+          intensity={70}
+          borderRadius={18}
+          backgroundColor="rgba(255,255,255,0.74)"
+          borderColor="#CFE0FF"
+          borderWidth={1.2}
+        >
           <View style={styles.tileHeader}>
-            <Ionicons name={icon} size={22} color="#0F62FE" />
+            {customIcon ? customIcon : <Ionicons name={icon} size={22} color="#0F62FE" />}
             <Text style={styles.tileTitle}>{title}</Text>
             <Ionicons
               name={isExpanded ? "chevron-down" : "chevron-forward"}
@@ -172,6 +185,7 @@ function ConditionItem({ name, description, color }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#EAF2FF',
   },
   contentWrapper: {
     flex: 1,
@@ -186,9 +200,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.38)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderColor: 'rgba(255, 255, 255, 0.62)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -210,11 +224,35 @@ const styles = StyleSheet.create({
   logoBox: {
     width: 82,
     height: 82,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.7)',
     padding: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
   logoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  smallLogoBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.7)',
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  smallLogoImage: {
     width: '100%',
     height: '100%',
   },
@@ -301,8 +339,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   conditionDot: {
-    width: 12,
-    height: 12,
+    width: 6,
+    height: 6,
     borderRadius: 6,
     marginTop: 4,
   },

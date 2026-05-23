@@ -1,234 +1,233 @@
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from '@react-navigation/native';
+import { useState, useCallback } from 'react';
+import { StyleSheet, View, Text, FlatList, Image, ImageBackground, Pressable, SafeAreaView, StatusBar, Platform, RefreshControl, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { format } from 'date-fns';
 
+import { getScanHistory, clearScanHistory, deleteScanHistoryEntry, type ScanHistoryEntry } from '@/services/scan-history';
+import { getConditionInfo } from '@/data/diagnosis';
 import { GlassView } from '@/components/nailscan/glass-view';
-import { useNailScanColors } from '@/hooks/use-nailscan-colors';
-import type { ScanHistoryEntry } from '@/services/scan-history';
-import { clearScanHistory, getScanHistory, deleteScanHistoryEntry } from '@/services/scan-history';
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const colors = useNailScanColors();
-  const [history, setHistory] = useState<ScanHistoryEntry[]>([]);
+  const [historyItems, setHistoryItems] = useState<ScanHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadHistory = useCallback(() => {
-    let active = true;
-    setLoading(true);
-    getScanHistory()
-      .then((items) => {
-        if (active) {
-          setHistory(items);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-    return () => { active = false; };
-  }, []);
+  const loadHistory = async () => {
+    try {
+      const items = await getScanHistory();
+      setHistoryItems(items);
+    } catch (e) {
+      console.error('Failed to load history:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
-      return loadHistory();
-    }, [loadHistory])
+      loadHistory();
+    }, [])
   );
 
-  const formatHistoryDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString('en-US', {
-      month: 'short', day: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadHistory();
+    setRefreshing(false);
   };
 
   const handleClearHistory = () => {
-    Alert.alert('Clear All History', 'This will permanently remove all saved scans. This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear All',
-        style: 'destructive',
-        onPress: async () => {
-          await clearScanHistory();
-          setHistory([]);
-        },
-      },
-    ]);
+    if (historyItems.length === 0) return;
+    
+    Alert.alert(
+      "Delete all history?",
+      "This will permanently remove all saved scan results.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            await clearScanHistory();
+            setHistoryItems([]);
+          }
+        }
+      ]
+    );
   };
 
-  const handleDeleteItem = (id: string) => {
-    Alert.alert('Delete Scan', 'Are you sure you want to delete this scan result?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteScanHistoryEntry(id);
-          setHistory(prev => prev.filter(item => item.id !== id));
-        },
-      },
-    ]);
+  const handleDeleteItem = async (id: string) => {
+    Alert.alert(
+      "Delete Scan",
+      "Are you sure you want to delete this scan?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            await deleteScanHistoryEntry(id);
+            setHistoryItems(items => items.filter(item => item.id !== id));
+          }
+        }
+      ]
+    );
   };
 
-  return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
-        locations={[0, 0.34, 0.72, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0 }}>
-        <View style={styles.contentWrapper}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Pressable onPress={() => router.push('/')} style={styles.headerIconBtn}>
-              <Ionicons name="chevron-back" size={20} color="#0B2E6F" />
-            </Pressable>
-            <Text style={styles.headerTitle}>Scan History</Text>
-            <Pressable 
-              onPress={handleClearHistory} 
-              disabled={history.length === 0}
-              style={styles.headerIconBtn}
-            >
-              <Ionicons 
-                name="trash-outline" 
-                size={20} 
-                color={history.length === 0 ? '#B8C7E0' : '#FF6B6B'} 
-              />
-            </Pressable>
-          </View>
-          <Text style={styles.headerSubtitle}>View your past nail scan results</Text>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {history.length > 0 && (
-              <>
-                {/* Auto Save Card */}
-                <GlassView style={styles.autoSaveCard} intensity={86}>
-                  <LinearGradient
-                    colors={['#5FA8FF', '#006DFF']}
-                    style={styles.autoSaveIconBox}
-                  >
-                    <Ionicons name="checkmark-circle" size={30} color="white" />
-                  </LinearGradient>
-                  <View style={styles.autoSaveTextBox}>
-                    <Text style={styles.autoSaveTitle}>Results are automatically saved</Text>
-                    <Text style={styles.autoSaveText}>
-                      All your scan results are securely stored and can be viewed anytime.
-                    </Text>
-                  </View>
-                </GlassView>
-
-                <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>Recent Scans</Text>
-                  <Text style={styles.sectionCount}>
-                    {history.length} {history.length === 1 ? 'result' : 'results'}
-                  </Text>
-                </View>
-              </>
-            )}
-
-            {loading ? (
-              <View style={styles.loadingBox}>
-                <Text style={styles.loadingText}>Loading history...</Text>
-              </View>
-            ) : history.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <GlassView style={styles.emptyCard} intensity={86}>
-                  <View style={styles.emptyIconBox}>
-                    <Ionicons name="time" size={46} color="#006DFF" />
-                  </View>
-                  <Text style={styles.emptyTitle}>No History Yet</Text>
-                  <Text style={styles.emptyText}>
-                    Your scan results will appear here after your first analysis.
-                  </Text>
-                </GlassView>
-              </View>
-            ) : (
-              history.map((entry) => (
-                <HistoryCard 
-                  key={entry.id} 
-                  entry={entry} 
-                  formattedDate={formatHistoryDate(entry.timestamp)}
-                  onPress={() => {
-                    router.push({
-                      pathname: '/result',
-                      params: {
-                        label: entry.label,
-                        confidence: `${entry.confidence}`,
-                        imageUri: entry.imageUri || '',
-                      },
-                    });
-                  }}
-                  onDelete={() => handleDeleteItem(entry.id)}
-                />
-              ))
-            )}
-          </ScrollView>
-        </View>
-      </SafeAreaView>
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.headerTopRow}>
+        <Pressable 
+          style={styles.headerIconBtn}
+          onPress={() => router.push('/(tabs)')}
+        >
+          <Ionicons name="chevron-back" size={24} color="#0B2E6F" />
+        </Pressable>
+        <Text style={styles.headerTitle} numberOfLines={1}>Scan History</Text>
+        <Pressable 
+          style={styles.headerIconBtn}
+          onPress={historyItems.length > 0 ? handleClearHistory : undefined}
+          disabled={historyItems.length === 0}
+        >
+          <Ionicons name="trash-outline" size={20} color={historyItems.length > 0 ? "#EF4444" : "#B8C7E0"} />
+        </Pressable>
+      </View>
+      <Text style={styles.headerSubtitle}>View your past nail scan results</Text>
     </View>
   );
-}
 
-function HistoryCard({ entry, formattedDate, onPress, onDelete }: { entry: ScanHistoryEntry, formattedDate: string, onPress: () => void, onDelete: () => void }) {
-  const confidencePct = Math.round(entry.confidence * 100);
-  const isHealthy = entry.label.toLowerCase().includes('healthy');
-  const isUnidentified = entry.label.toLowerCase().includes('unidentified');
-  
-  let riskColor = '#FF8A00'; // Moderate
-  let riskLabel = 'Moderate Risk';
-  let statusColor = '#D71920';
+  const renderAutoSaveCard = () => (
+    <GlassView 
+      style={styles.autoSaveCard}
+      intensity={80}
+      borderRadius={24}
+      backgroundColor="rgba(255,255,255,0.4)"
+      borderColor="rgba(255,255,255,0.8)"
+      borderWidth={1.5}
+    >
+      <View style={styles.autoSaveIconWrapper}>
+        <Ionicons name="shield-checkmark" size={26} color="white" />
+      </View>
+      <View style={styles.autoSaveTextWrapper}>
+        <Text style={styles.autoSaveTitle}>Results are automatically saved</Text>
+        <Text style={styles.autoSaveDesc}>All your scan results are securely stored and can be viewed anytime.</Text>
+      </View>
+    </GlassView>
+  );
 
-  if (isHealthy) {
-    riskColor = '#2E9D45';
-    riskLabel = 'Low Risk';
-    statusColor = '#2E9D45';
-  } else if (isUnidentified) {
-    riskColor = '#7E8BA0';
-    riskLabel = 'Uncertain Risk';
-    statusColor = '#7E8BA0';
-  }
+  const renderRecentTitle = () => (
+    <View style={styles.recentTitleWrapper}>
+      <Text style={styles.recentTitle}>Recent Scans</Text>
+      <Text style={styles.recentCount}>{historyItems.length} result{historyItems.length === 1 ? '' : 's'}</Text>
+    </View>
+  );
 
-  return (
-    <Pressable onPress={onPress}>
-      <GlassView style={styles.historyCard} intensity={86}>
-        <View style={styles.cardContent}>
-          <View style={styles.thumbnailBox}>
-            {entry.imageUri ? (
-              <Image source={{ uri: entry.imageUri }} style={styles.thumbnail} />
+  const renderItem = ({ item }: { item: ScanHistoryEntry }) => {
+    const diagnosis = getConditionInfo(item.label);
+    const dateStr = format(new Date(item.timestamp), 'MMM d, yyyy HH:mm');
+    
+    return (
+      <Pressable onPress={() => router.push(`/history/${item.id}`)} onLongPress={() => handleDeleteItem(item.id)}>
+        <GlassView 
+          style={styles.historyCard}
+          intensity={80}
+          borderRadius={24}
+          backgroundColor="rgba(255,255,255,0.4)"
+          borderColor="rgba(255,255,255,0.8)"
+          borderWidth={1.5}
+        >
+          <View style={styles.cardImageWrapper}>
+            {item.imageUri ? (
+              <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
             ) : (
-              <Ionicons name="finger-print" size={34} color={statusColor} />
+              <Ionicons name="image-outline" size={34} color="#006DFF" />
             )}
           </View>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardTitle} numberOfLines={1}>{entry.label}</Text>
+          
+          <View style={styles.cardContent}>
+            <Text style={styles.cardCondition} numberOfLines={1}>
+              {diagnosis.label.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+            </Text>
+            
             <View style={styles.infoLine}>
               <Ionicons name="shield-checkmark-outline" size={16} color="#006DFF" />
-              <Text style={[styles.infoLineText, { color: '#006DFF' }]}>{confidencePct}% Confidence</Text>
+              <Text style={[styles.infoText, { color: '#006DFF' }]}>{(item.confidence * 100).toFixed(0)}% Confidence</Text>
             </View>
+
             <View style={styles.infoLine}>
-              <Ionicons name="calendar-outline" size={16} color="#4F668F" />
-              <Text style={[styles.infoLineText, { color: '#4F668F' }]}>{formattedDate}</Text>
-            </View>
-            <View style={[styles.riskPill, { backgroundColor: `${riskColor}20` }]}>
-              <View style={[styles.riskDot, { backgroundColor: riskColor }]} />
-              <Text style={[styles.riskLabel, { color: riskColor }]}>{riskLabel}</Text>
+              <Ionicons name="calendar-outline" size={16} color="#64789A" />
+              <Text style={[styles.infoText, { color: '#64789A' }]}>{dateStr}</Text>
             </View>
           </View>
-          <Pressable onPress={onDelete} style={styles.deleteBtn}>
-            <Ionicons name="trash-outline" size={24} color="#FF6B6B" />
-          </Pressable>
+
+          <Ionicons name="chevron-forward" size={24} color="#006DFF" />
+        </GlassView>
+      </Pressable>
+    );
+  };
+
+  const renderEmptyContent = () => (
+    <View style={styles.emptyContent}>
+      <GlassView 
+        style={styles.emptyCard}
+        intensity={80}
+        borderRadius={24}
+        backgroundColor="rgba(255,255,255,0.4)"
+        borderColor="rgba(255,255,255,0.8)"
+        borderWidth={1.5}
+      >
+        <View style={styles.emptyIconCircle}>
+          <Ionicons name="time" size={46} color="#006DFF" />
         </View>
+        <Text style={styles.emptyTitle}>No History Yet</Text>
+        <Text style={styles.emptyDesc}>Your scan results will appear here after your first analysis.</Text>
       </GlassView>
-    </Pressable>
+    </View>
+  );
+
+  return (
+    <ImageBackground 
+      source={require('@/assets/images/background.png')}
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={styles.safeArea}>
+        
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            {renderHeader()}
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        ) : historyItems.length === 0 ? (
+          <View style={{ flex: 1 }}>
+            {renderHeader()}
+            {renderEmptyContent()}
+          </View>
+        ) : (
+          <FlatList
+            data={historyItems}
+            keyExtractor={item => item.id}
+            ListHeaderComponent={() => (
+              <>
+                {renderHeader()}
+                {renderAutoSaveCard()}
+                {renderRecentTitle()}
+              </>
+            )}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0B2E6F" />
+            }
+          />
+        )}
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -236,200 +235,196 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentWrapper: {
+  safeArea: {
     flex: 1,
-    paddingHorizontal: 20,
-  },
-  glow: {
-    position: 'absolute',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 1,
-    shadowRadius: 25,
-    elevation: 10,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0,
   },
   header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+  },
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 20,
-    paddingHorizontal: 0,
+    marginBottom: 8,
   },
   headerIconBtn: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderColor: 'rgba(255,255,255,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: '#0B2E6F',
-    letterSpacing: -0.6,
     flex: 1,
-    textAlign: 'center',
-    marginHorizontal: 10,
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#071F55',
+    marginHorizontal: 12,
   },
   headerSubtitle: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#4667A0',
-    marginLeft: 52,
-    marginTop: -4,
-  },
-  scrollContent: {
-    paddingTop: 20,
-    // Clear the absolute tab bar
-    paddingBottom: 120,
-    gap: 14,
+    fontWeight: '600',
+    color: '#3F5F8F',
+    marginLeft: 56,
   },
   autoSaveCard: {
     flexDirection: 'row',
-    padding: 18,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
     alignItems: 'center',
   },
-  autoSaveIconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  autoSaveIconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#006DFF',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 16,
   },
-  autoSaveTextBox: {
+  autoSaveTextWrapper: {
     flex: 1,
-    marginLeft: 14,
   },
   autoSaveTitle: {
-    fontSize: 15.5,
-    fontWeight: '900',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#006DFF',
+    marginBottom: 4,
   },
-  autoSaveText: {
+  autoSaveDesc: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#071F55',
-    marginTop: 5,
   },
-  sectionTitleRow: {
+  recentTitleWrapper: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
-    paddingHorizontal: 2,
+    paddingHorizontal: 24,
+    paddingBottom: 12,
   },
-  sectionTitle: {
-    fontSize: 18,
+  recentTitle: {
+    flex: 1,
+    fontSize: 17,
     fontWeight: '900',
     color: '#071F55',
   },
-  sectionCount: {
+  recentCount: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#17448A',
+    fontWeight: '700',
+    color: '#006DFF',
+  },
+  listContent: {
+    paddingBottom: 40,
   },
   historyCard: {
-    padding: 12,
-  },
-  cardContent: {
     flexDirection: 'row',
+    padding: 12,
+    marginHorizontal: 20,
     alignItems: 'center',
   },
-  thumbnailBox: {
-    width: 86,
-    height: 96,
-    borderRadius: 15,
+  cardImageWrapper: {
+    width: 90,
+    height: 90,
+    borderRadius: 16,
     backgroundColor: '#E9F2FF',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    marginRight: 16,
   },
-  thumbnail: {
+  cardImage: {
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
-  cardInfo: {
+  cardContent: {
     flex: 1,
-    marginLeft: 14,
   },
-  cardTitle: {
-    fontSize: 18,
+  cardCondition: {
+    fontSize: 17,
     fontWeight: '900',
     color: '#071F55',
+    marginBottom: 6,
   },
   infoLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 7,
+    marginBottom: 6,
   },
-  infoLineText: {
-    fontSize: 12.5,
-    fontWeight: '800',
+  infoText: {
+    fontSize: 12,
+    fontWeight: '700',
     marginLeft: 6,
   },
   riskPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    marginTop: 8,
     alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginTop: 2,
   },
-  riskDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+  riskPillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
   },
-  riskLabel: {
-    fontSize: 11.5,
-    fontWeight: '900',
-    marginLeft: 6,
+  riskPillText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
-  deleteBtn: {
-    padding: 8,
-    marginRight: -4,
-  },
-  loadingBox: {
-    padding: 40,
+  emptyContent: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#071F55',
-    fontWeight: '700',
-  },
-  emptyBox: {
-    paddingHorizontal: 2,
+    paddingHorizontal: 22,
+    paddingBottom: 88,
   },
   emptyCard: {
     padding: 26,
     alignItems: 'center',
+    width: '100%',
   },
-  emptyIconBox: {
+  emptyIconCircle: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: 'rgba(0, 109, 255, 0.1)',
+    backgroundColor: 'rgba(0,109,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 20, // Wait, margin bottom 20
+    marginBottom: 20,
   },
   emptyTitle: {
     fontSize: 22,
     fontWeight: '900',
     color: '#071F55',
-    marginTop: 20,
+    marginBottom: 10,
   },
-  emptyText: {
+  emptyDesc: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 19.6,
     fontWeight: '700',
     color: '#4F668F',
     textAlign: 'center',
-    marginTop: 10,
+  },
+  loadingContainer: {
+    flex: 1,
+  },
+  loadingText: {
+    textAlign: 'center',
+    marginTop: 40,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4667A0',
   },
 });

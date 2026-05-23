@@ -5,21 +5,18 @@ import { StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 
 export default function TabLayout() {
-  const colors = useNailScanColors();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#0F62FE',
-        tabBarInactiveTintColor: '#8AA2C9',
+        tabBarActiveTintColor: '#0A84FF',
+        tabBarInactiveTintColor: '#8BA8E0',
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: () => (
           <BlurView 
-            intensity={90} 
+            intensity={80} 
             tint="light" 
             style={StyleSheet.absoluteFill} 
           />
@@ -28,16 +25,16 @@ export default function TabLayout() {
           position: 'absolute',
           bottom: 0,
           borderTopWidth: 1,
-          borderTopColor: '#EAF2FF',
-          backgroundColor: '#FFFFFF',
-          height: 86,
+          borderTopColor: 'rgba(53,200,255,0.4)',
+          backgroundColor: 'rgba(255,255,255,0.72)',
+          height: 92,
           paddingBottom: 22,
           paddingTop: 12,
           elevation: 0,
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: '700',
+          fontWeight: '600',
           marginTop: 2,
         },
       }}>
@@ -46,7 +43,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />
+            <Ionicons name={focused ? "home" : "home-outline"} size={28} color={color} />
           ),
         }}
       />
@@ -55,7 +52,7 @@ export default function TabLayout() {
         options={{
           title: 'History',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "time" : "time-outline"} size={26} color={color} />
+            <Ionicons name={focused ? "time" : "time-outline"} size={28} color={color} />
           ),
         }}
       />
@@ -64,7 +61,7 @@ export default function TabLayout() {
         options={{
           title: 'About',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "information-circle" : "information-circle-outline"} size={26} color={color} />
+            <Ionicons name={focused ? "information-circle" : "information-circle-outline"} size={28} color={color} />
           ),
         }}
       />
@@ -77,3 +74,4 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+

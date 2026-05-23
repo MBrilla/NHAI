@@ -45,3 +45,9 @@ app-example
 # generated native folders
 /ios
 /android
+
+/testimages
+/NailScan_Thesis
+
+.ipynb
+.md

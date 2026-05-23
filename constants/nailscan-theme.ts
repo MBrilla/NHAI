@@ -10,6 +10,7 @@ export const NailScanThemes = {
     text: '#0A2A66',
     textSecondary: '#46639A',
     textMuted: '#8AA0C8',
+    mutedText: '#8AA0C8',
     descriptionDark: '#28477D',
     card: '#FFFFFF',
     cardSoft: '#F1F6FF',
@@ -35,6 +36,7 @@ export const NailScanThemes = {
     text: '#E5E7EB',
     textSecondary: '#CBD5E1',
     textMuted: '#94A3B8',
+    mutedText: '#94A3B8',
     descriptionDark: '#CBD5E1',
     card: '#1E293B',
     cardSoft: '#0F172A',
@@ -62,6 +64,7 @@ export type NailScanPalette = {
   text: string;
   textSecondary: string;
   textMuted: string;
+  mutedText: string;
   descriptionDark: string;
   card: string;
   cardSoft: string;
@@ -104,6 +107,6 @@ export const NailScanTaglines = [
   'Check your nail health in seconds',
 ] as const;
 
-export const DiagnosisLabels = ['Acral Lentiginous Melanoma', 'clubbing', 'healthy', 'onychogryphosis'] as const;
+export const DiagnosisLabels = ['beau_lines', 'clubbing', 'healthy_nails', 'pitting'] as const;
 
 export type DiagnosisLabel = (typeof DiagnosisLabels)[number];

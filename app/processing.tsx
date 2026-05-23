@@ -1,9 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Image, Pressable, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-
+import { Alert, Animated, Easing, Image, ImageBackground, Pressable, StyleSheet, Text, View, SafeAreaView, StatusBar, Platform } from 'react-native';
 
 import { useNailScanColors } from '@/hooks/use-nailscan-colors';
 import { addScanHistoryEntry } from '@/services/scan-history';
@@ -85,22 +83,20 @@ export default function ProcessingScreen() {
     }
 
     if (prediction) {
-      // Check for high-risk quality flags (manicure or obstruction)
       const hasManicure = prediction.qualityFlags.some(f => f.includes('polish'));
       const hasObstruction = prediction.qualityFlags.some(f => f.includes('obstructed'));
 
-      if (hasManicure || hasObstruction) {
-        // We show the flags in the result screen instead of blocking, 
-        // as per clinical "Acknowledge & Proceed" pattern.
-      }
-
       routeTriggeredRef.current = true;
 
-      // Save to history before navigating
+      const finalImageUri = prediction.imageUri ?? params.imageUri ?? '';
+      const originalImageUri = params.imageUri ?? '';
+      
       addScanHistoryEntry({
         label: prediction.label as any,
         confidence: prediction.confidence ?? 0.9,
-        imageUri: params.imageUri,
+        imageUri: finalImageUri,
+        originalImageUri: originalImageUri,
+        roi: prediction.roi,
         runtimeMode: prediction.runtimeMode ?? runtimeMode,
         inferenceTimeMs: prediction.inferenceTimeMs,
       }).catch(console.error);
@@ -111,7 +107,8 @@ export default function ProcessingScreen() {
           params: {
             label: prediction.label,
             confidence: `${prediction.confidence}`,
-            imageUri: params.imageUri ?? '',
+            imageUri: finalImageUri,
+            originalImageUri: originalImageUri,
             roi: prediction.roi ? JSON.stringify(prediction.roi) : '',
           },
         });
@@ -126,17 +123,14 @@ export default function ProcessingScreen() {
   });
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#D5EBFF', '#EEF7FF', '#BFDFFF', '#88C4FF']}
-        locations={[0, 0.34, 0.72, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
+    <ImageBackground 
+      source={require('@/assets/images/background.png')}
+      style={styles.container}
+      resizeMode="cover"
+      imageStyle={{ opacity: 0.8 }}
+    >
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 0 }}>
+      <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0 }}>
         <View style={styles.contentWrapper}>
           <View style={styles.header}>
             <Pressable onPress={() => router.back()} style={styles.backBtn}>
@@ -169,13 +163,14 @@ export default function ProcessingScreen() {
           </View>
         </View>
       </SafeAreaView>
-    </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#EAF2FF',
   },
   contentWrapper: {
     flex: 1,
@@ -191,9 +186,9 @@ const styles = StyleSheet.create({
     width: moderateScale(42),
     height: moderateScale(42),
     borderRadius: moderateScale(16),
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.38)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderColor: 'rgba(255, 255, 255, 0.62)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -238,7 +233,7 @@ const styles = StyleSheet.create({
     height: moderateScale(200),
     borderRadius: moderateScale(100),
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     borderStyle: 'dotted',
     position: 'absolute',
   },
@@ -255,7 +250,9 @@ const styles = StyleSheet.create({
     width: moderateScale(140),
     height: moderateScale(140),
     borderRadius: moderateScale(70),
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: 'white',
@@ -285,5 +282,6 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(20),
   },
 });
+
 
 

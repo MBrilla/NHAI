@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as jpeg from 'jpeg-js';
 import { Image, NativeModules, Platform, TurboModuleRegistry } from 'react-native';
+import Constants from 'expo-constants';
 
 import { CLASS_LABELS, type DiagnosisLabel } from '@/data/diagnosis';
 import {
@@ -22,6 +23,7 @@ export interface TflitePrediction {
   qualityScore: number;
   qualityFlags: string[];
   roi?: { x: number; y: number; width: number; height: number };
+  imageUri?: string;
 }
 
 export interface InferenceQualityMetadata {
@@ -45,10 +47,10 @@ const LOW_END_INFERENCE_BUDGET_MS = 700;
 const LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD = 0.44;
 const ENSEMBLING_ENABLED = true;
 
-const ALM_INDEX = CLASS_LABELS.indexOf('Acral Lentiginous Melanoma');
+const BEAU_LINES_INDEX = CLASS_LABELS.indexOf('beau_lines');
 const CLUBBING_INDEX = CLASS_LABELS.indexOf('clubbing');
-const HEALTHY_INDEX = CLASS_LABELS.indexOf('healthy');
-const ONYCHOGRYPHOSIS_INDEX = CLASS_LABELS.indexOf('onychogryphosis');
+const HEALTHY_NAILS_INDEX = CLASS_LABELS.indexOf('healthy_nails');
+const PITTING_INDEX = CLASS_LABELS.indexOf('pitting');
 
 type NativePreprocessorResult = {
   available?: boolean;
@@ -193,8 +195,8 @@ function computeFramingMetadata(
   for (let i = 0; i < pixelCount; i++) {
     const idx = i * 3;
     const { h, s, v } = rgbToHsv(rgb[idx], rgb[idx + 1], rgb[idx + 2]);
-    const inRange1 = h >= 0 && h <= 25 && s >= 15 && v >= 60;
-    const inRange2 = h >= 155 && h <= 180 && s >= 15 && v >= 60;
+    const inRange1 = h >= 0 && h <= 50 && s >= 15 && v >= 60;
+    const inRange2 = h >= 310 && h <= 360 && s >= 15 && v >= 60;
     mask[i] = inRange1 || inRange2 ? 1 : 0;
   }
 
@@ -660,8 +662,41 @@ function computeOtsuThreshold(grayPixels: Uint8Array, total: number): number {
  * 4. Get its bounding box
  * 5. Add padding_ratio padding on all sides
  */
+function gaussianBlur5x5(gray: Uint8Array, width: number, height: number): Uint8Array {
+  const blurred = new Uint8Array(width * height);
+  const kernel = [
+    [1,  4,  6,  4, 1],
+    [4, 16, 24, 16, 4],
+    [6, 24, 36, 24, 6],
+    [4, 16, 24, 16, 4],
+    [1,  4,  6,  4, 1]
+  ];
+  const kernelSum = 256;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let weightSum = 0;
+      for (let ky = -2; ky <= 2; ky++) {
+        const yy = y + ky;
+        if (yy < 0 || yy >= height) continue;
+        for (let kx = -2; kx <= 2; kx++) {
+          const xx = x + kx;
+          if (xx < 0 || xx >= width) continue;
+          const val = gray[yy * width + xx];
+          const w = kernel[ky + 2][kx + 2];
+          sum += val * w;
+          weightSum += w;
+        }
+      }
+      blurred[y * width + x] = weightSum > 0 ? (sum / weightSum) | 0 : gray[y * width + x];
+    }
+  }
+  return blurred;
+}
+
 function extractROIByOtsuCrop(
-  rgb: Float32Array, width: number, height: number, paddingRatio = 0.35
+  rgb: Float32Array, width: number, height: number, paddingRatio = 0.22
 ): {
   rgb: Float32Array;
   cropW: number;
@@ -669,80 +704,205 @@ function extractROIByOtsuCrop(
   roi: { x: number; y: number; width: number; height: number };
 } {
   const total = width * height;
-
-  // Step 1: Convert to grayscale
   const gray = new Uint8Array(total);
+  const skinMask = new Uint8Array(total);
+  
   for (let i = 0; i < total; i++) {
     const idx = i * 3;
-    gray[i] = Math.round(0.299 * rgb[idx] + 0.587 * rgb[idx + 1] + 0.114 * rgb[idx + 2]) | 0;
+    const r = rgb[idx];
+    const g = rgb[idx + 1];
+    const b = rgb[idx + 2];
+    gray[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b) | 0;
+
+    const { h, s, v } = rgbToHsv(r, g, b);
+    const inRange1 = h >= 0 && h <= 50 && s >= 15 && v >= 60;
+    const inRange2 = h >= 310 && h <= 360 && s >= 15 && v >= 60;
+    skinMask[i] = inRange1 || inRange2 ? 1 : 0;
   }
 
-  // Step 2: Otsu's threshold on a center-biased region
-  // We prioritize the central 60% area where the nail should be located.
-  const focusX1 = Math.floor(width * 0.2);
-  const focusX2 = Math.ceil(width * 0.8);
-  const focusY1 = Math.floor(height * 0.2);
-  const focusY2 = Math.ceil(height * 0.8);
-  const focusArea = (focusX2 - focusX1) * (focusY2 - focusY1);
-  const focusGray = new Uint8Array(focusArea);
-  
-  let fi = 0;
-  for (let y = focusY1; y < focusY2; y++) {
-    for (let x = focusX1; x < focusX2; x++) {
-      focusGray[fi++] = gray[y * width + x];
+  // Find the largest connected component of skin-color to locate the finger
+  const visitedSkin = new Uint8Array(total);
+  let largestSkinArea = 0;
+  let fingerBox = { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 };
+  let fingerFound = false;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const start = y * width + x;
+      if (skinMask[start] === 0 || visitedSkin[start] === 1) continue;
+
+      const queue = [start];
+      visitedSkin[start] = 1;
+      let head = 0;
+      let minX = x;
+      let maxX = x;
+      let minY = y;
+      let maxY = y;
+      let area = 0;
+
+      while (head < queue.length) {
+        const current = queue[head++];
+        const cy = Math.floor(current / width);
+        const cx = current - cy * width;
+        area += 1;
+
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+
+        const neighbors = [current - 1, current + 1, current - width, current + width];
+        for (const n of neighbors) {
+          if (n < 0 || n >= total) continue;
+          const ny = Math.floor(n / width);
+          const nx = n - ny * width;
+          if (Math.abs(nx - cx) + Math.abs(ny - cy) !== 1) continue;
+          if (skinMask[n] === 0 || visitedSkin[n] === 1) continue;
+          visitedSkin[n] = 1;
+          queue.push(n);
+        }
+      }
+
+      if (area > largestSkinArea && area > total * 0.015) {
+        largestSkinArea = area;
+        fingerBox = { minX, minY, maxX, maxY };
+        fingerFound = true;
+      }
     }
   }
 
-  const threshold = computeOtsuThreshold(focusGray, focusArea);
-  const mask = new Uint8Array(total);
-  for (let i = 0; i < total; i++) {
-    mask[i] = gray[i] > threshold ? 1 : 0;
-  }
-
-  // Step 3: Find best nail component (center-weighted)
-  const best = findBestNailMaskBoundingBox(mask, width, height);
-
-  // Fallback: if no contour found or too small, use full image
-  if (!best || best.area < total * 0.01) {
-    return {
-      rgb,
-      cropW: width,
-      cropH: height,
-      roi: { x: 0, y: 0, width, height },
+  // If no finger was found, fall back to a center crop (~50% of the image).
+  // The camera guide tells users to center their nail, so this is far better
+  // than returning the entire image with all the background noise.
+  if (!fingerFound) {
+    const centerCropRatio = 0.50;
+    const cw = Math.round(width * centerCropRatio);
+    const ch = Math.round(height * centerCropRatio);
+    fingerBox = {
+      minX: Math.round((width - cw) / 2),
+      minY: Math.round((height - ch) / 2),
+      maxX: Math.round((width - cw) / 2) + cw - 1,
+      maxY: Math.round((height - ch) / 2) + ch - 1,
     };
+    // Treat as "found" so the Otsu nail-plate isolation runs on the center region
+    fingerFound = true;
   }
 
-  // Step 4: Bounding box
-  const bx = best.minX;
-  const by = best.minY;
-  const bw = best.maxX - best.minX + 1;
-  const bh = best.maxY - best.minY + 1;
+  let minX = fingerBox.minX;
+  let minY = fingerBox.minY;
+  let maxX = fingerBox.maxX;
+  let maxY = fingerBox.maxY;
+  let nailFound = false;
 
-  // Step 5: Add padding (matching training's padding_ratio=0.35)
-  const padX = Math.round(bw * paddingRatio);
-  const padY = Math.round(bh * paddingRatio);
-  const x1 = Math.max(0, bx - padX);
-  const y1 = Math.max(0, by - padY);
-  const x2 = Math.min(width, bx + bw + padX);
-  const y2 = Math.min(height, by + bh + padY);
-  const cropW = x2 - x1;
-  const cropH = y2 - y1;
+  if (fingerFound) {
+    // Perform Otsu's thresholding exclusively inside the finger region
+    const fWidth = fingerBox.maxX - fingerBox.minX + 1;
+    const fHeight = fingerBox.maxY - fingerBox.minY + 1;
+    const fTotal = fWidth * fHeight;
+    const fGray = new Uint8Array(fTotal);
+    let fIdx = 0;
+    
+    for (let y = fingerBox.minY; y <= fingerBox.maxY; y++) {
+      for (let x = fingerBox.minX; x <= fingerBox.maxX; x++) {
+        fGray[fIdx++] = gray[y * width + x];
+      }
+    }
 
-  if (cropW <= 0 || cropH <= 0) {
-    return {
-      rgb,
-      cropW: width,
-      cropH: height,
-      roi: { x: 0, y: 0, width, height },
-    };
+    const threshold = computeOtsuThreshold(fGray, fTotal);
+
+    // Limit nail plate search to the upper 65% of the finger box where it naturally sits
+    const upperLimitY = fingerBox.minY + Math.round(fHeight * 0.65);
+
+    // Find the largest bright component (the nail plate) inside the upper finger box
+    const visitedNail = new Uint8Array(total);
+    let largestNailArea = 0;
+    let nailBox = { minX: fingerBox.minX, minY: fingerBox.minY, maxX: fingerBox.maxX, maxY: upperLimitY };
+
+    for (let y = fingerBox.minY; y <= upperLimitY; y++) {
+      for (let x = fingerBox.minX; x <= fingerBox.maxX; x++) {
+        const start = y * width + x;
+        if (gray[start] < threshold || visitedNail[start] === 1) continue;
+
+        const queue = [start];
+        visitedNail[start] = 1;
+        let head = 0;
+        let nMinX = x;
+        let nMaxX = x;
+        let nMinY = y;
+        let nMaxY = y;
+        let area = 0;
+
+        while (head < queue.length) {
+          const current = queue[head++];
+          const cy = Math.floor(current / width);
+          const cx = current - cy * width;
+          area += 1;
+
+          if (cx < nMinX) nMinX = cx;
+          if (cx > nMaxX) nMaxX = cx;
+          if (cy < nMinY) nMinY = cy;
+          if (cy > nMaxY) nMaxY = cy;
+
+          const neighbors = [current - 1, current + 1, current - width, current + width];
+          for (const n of neighbors) {
+            if (n < 0 || n >= total) continue;
+            const ny = Math.floor(n / width);
+            const nx = n - ny * width;
+            if (Math.abs(nx - cx) + Math.abs(ny - cy) !== 1) continue;
+            if (nx < fingerBox.minX || nx > fingerBox.maxX || ny < fingerBox.minY || ny > upperLimitY) continue;
+            if (gray[n] < threshold || visitedNail[n] === 1) continue;
+            visitedNail[n] = 1;
+            queue.push(n);
+          }
+        }
+
+        if (area > largestNailArea) {
+          largestNailArea = area;
+          nailBox = { minX: nMinX, minY: nMinY, maxX: nMaxX, maxY: nMaxY };
+          nailFound = true;
+        }
+      }
+    }
+
+    if (nailFound) {
+      const w_box = nailBox.maxX - nailBox.minX + 1;
+      const h_box = nailBox.maxY - nailBox.minY + 1;
+      const pad_w = Math.round(w_box * paddingRatio);
+      const pad_h = Math.round(h_box * paddingRatio);
+
+      minX = Math.max(0, nailBox.minX - pad_w);
+      minY = Math.max(0, nailBox.minY - pad_h);
+      maxX = Math.min(width - 1, nailBox.maxX + pad_w);
+      maxY = Math.min(height - 1, nailBox.maxY + pad_h);
+    } else {
+      // Fallback: crop the upper 45% of the finger region where the nail plate naturally sits
+      minX = fingerBox.minX;
+      maxX = fingerBox.maxX;
+      minY = fingerBox.minY;
+      maxY = Math.min(fingerBox.maxY, fingerBox.minY + Math.round(fHeight * 0.45));
+    }
   }
 
-  // Crop
-  const cropped = new Float32Array(cropW * cropH * 3);
-  for (let y = 0; y < cropH; y++) {
-    for (let x = 0; x < cropW; x++) {
-      const src = ((y1 + y) * width + (x1 + x)) * 3;
-      const dst = (y * cropW + x) * 3;
+  // Force the final ROI to be a perfect square, centered around our detection
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+  const maxDim = Math.max(cropW, cropH);
+  const centerX = Math.round((minX + maxX) / 2);
+  const centerY = Math.round((minY + maxY) / 2);
+
+  let sqMinX = Math.max(0, centerX - Math.round(maxDim / 2));
+  let sqMinY = Math.max(0, centerY - Math.round(maxDim / 2));
+  let sqMaxX = Math.min(width - 1, sqMinX + maxDim - 1);
+  let sqMaxY = Math.min(height - 1, sqMinY + maxDim - 1);
+
+  const finalW = sqMaxX - sqMinX + 1;
+  const finalH = sqMaxY - sqMinY + 1;
+
+  const cropped = new Float32Array(finalW * finalH * 3);
+  for (let y = 0; y < finalH; y++) {
+    for (let x = 0; x < finalW; x++) {
+      const src = ((sqMinY + y) * width + (sqMinX + x)) * 3;
+      const dst = (y * finalW + x) * 3;
       cropped[dst] = rgb[src];
       cropped[dst + 1] = rgb[src + 1];
       cropped[dst + 2] = rgb[src + 2];
@@ -751,10 +911,120 @@ function extractROIByOtsuCrop(
 
   return {
     rgb: cropped,
-    cropW,
-    cropH,
-    roi: { x: x1, y: y1, width: cropW, height: cropH },
+    cropW: finalW,
+    cropH: finalH,
+    roi: { x: sqMinX, y: sqMinY, width: finalW, height: finalH }
   };
+}
+
+/**
+ * Stage 2: Refine the coarse nail crop by running Otsu again.
+ * After Stage 1 isolates the finger+nail region, this second pass
+ * finds just the bright nail plate within that crop — producing
+ * the tight, nail-bed-filling images the model was trained on.
+ */
+function refineNailCropByOtsu(
+  rgb: Float32Array, width: number, height: number, paddingRatio = 0.03
+): { rgb: Float32Array; cropW: number; cropH: number } {
+  const total = width * height;
+  if (total < 100) return { rgb, cropW: width, cropH: height };
+
+  const gray = new Uint8Array(total);
+  for (let i = 0; i < total; i++) {
+    const idx = i * 3;
+    gray[i] = (0.299 * rgb[idx] + 0.587 * rgb[idx + 1] + 0.114 * rgb[idx + 2]) | 0;
+  }
+
+  const threshold = computeOtsuThreshold(gray, total);
+
+  // Find the largest bright component (the nail bed)
+  const visited = new Uint8Array(total);
+  let largestArea = 0;
+  let bestBox = { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 };
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const start = y * width + x;
+      if (gray[start] < threshold || visited[start] === 1) continue;
+
+      const queue = [start];
+      visited[start] = 1;
+      let head = 0;
+      let area = 0;
+      let bMinX = x, bMaxX = x, bMinY = y, bMaxY = y;
+
+      while (head < queue.length) {
+        const current = queue[head++];
+        const cy = Math.floor(current / width);
+        const cx = current - cy * width;
+        area++;
+        if (cx < bMinX) bMinX = cx;
+        if (cx > bMaxX) bMaxX = cx;
+        if (cy < bMinY) bMinY = cy;
+        if (cy > bMaxY) bMaxY = cy;
+
+        const neighbors = [current - 1, current + 1, current - width, current + width];
+        for (const n of neighbors) {
+          if (n < 0 || n >= total) continue;
+          const ny = Math.floor(n / width);
+          const nx = n - ny * width;
+          if (Math.abs(nx - cx) + Math.abs(ny - cy) !== 1) continue;
+          if (gray[n] < threshold || visited[n] === 1) continue;
+          visited[n] = 1;
+          queue.push(n);
+        }
+      }
+
+      if (area > largestArea) {
+        largestArea = area;
+        bestBox = { minX: bMinX, minY: bMinY, maxX: bMaxX, maxY: bMaxY };
+      }
+    }
+  }
+
+  // If the detected nail bed area is too small (<5% of the crop), skip refinement
+  if (largestArea < total * 0.05) {
+    return { rgb, cropW: width, cropH: height };
+  }
+
+  // Apply padding
+  const bw = bestBox.maxX - bestBox.minX + 1;
+  const bh = bestBox.maxY - bestBox.minY + 1;
+  const padW = Math.round(bw * paddingRatio);
+  const padH = Math.round(bh * paddingRatio);
+
+  let x1 = Math.max(0, bestBox.minX - padW);
+  let y1 = Math.max(0, bestBox.minY - padH);
+  let x2 = Math.min(width - 1, bestBox.maxX + padW);
+  let y2 = Math.min(height - 1, bestBox.maxY + padH);
+
+  // Force a perfect square
+  const cw = x2 - x1 + 1;
+  const ch = y2 - y1 + 1;
+  const maxDim = Math.max(cw, ch);
+  const centerX = Math.round((x1 + x2) / 2);
+  const centerY = Math.round((y1 + y2) / 2);
+
+  x1 = Math.max(0, centerX - Math.round(maxDim / 2));
+  y1 = Math.max(0, centerY - Math.round(maxDim / 2));
+  x2 = Math.min(width - 1, x1 + maxDim - 1);
+  y2 = Math.min(height - 1, y1 + maxDim - 1);
+
+  const finalW = x2 - x1 + 1;
+  const finalH = y2 - y1 + 1;
+
+  const cropped = new Float32Array(finalW * finalH * 3);
+  for (let y = 0; y < finalH; y++) {
+    for (let x = 0; x < finalW; x++) {
+      const src = ((y1 + y) * width + (x1 + x)) * 3;
+      const dst = (y * finalW + x) * 3;
+      cropped[dst] = rgb[src];
+      cropped[dst + 1] = rgb[src + 1];
+      cropped[dst + 2] = rgb[src + 2];
+    }
+  }
+
+  return { rgb: cropped, cropW: finalW, cropH: finalH };
 }
 
 /**
@@ -1057,36 +1327,146 @@ function normalizeRgbChannels(rgb: Float32Array): Float32Array {
  * `preprocess_image()` function (Cell 10).
  *
  * Steps:
- *   1. Otsu's threshold loose crop (padding_ratio=0.35)
- *   2. Letterbox resize to 384×384 with black padding
- *   3. CLAHE on L-channel (clipLimit=1.5, grid=8×8)
- *   4. Grey-world white balance
- *   5. Gaussian blur (3×3)
+ *   0. Smart skip: detect already-cropped images (small + high skin ratio)
+ *   1. Otsu's threshold loose crop (padding_ratio=0.35) — skipped if already cropped
+ *   2. Fine Otsu refinement — skipped if already cropped
+ *   3. Grey-world white balance
+ *   4. CLAHE on L-channel (clipLimit=3.0, grid=8×8)
+ *   5. Letterbox resize to 384×384 with black padding
  *
  * Output is [0, 255] uint8 RGB — the model's include_preprocessing=True
  * handles normalization to [-1, 1] internally.
  */
+/**
+ * Compute the fraction of pixels that fall into the skin-tone HSV range.
+ * Used to detect whether an image is already a tight nail/finger crop.
+ * Reuses the same HSV skin-tone bounds as extractROIByOtsuCrop.
+ */
+function computeSkinRatio(rgb: Float32Array, width: number, height: number): number {
+  const total = width * height;
+  if (total === 0) return 0;
+  let skinCount = 0;
+  for (let i = 0; i < total; i++) {
+    const idx = i * 3;
+    const { h, s, v } = rgbToHsv(rgb[idx], rgb[idx + 1], rgb[idx + 2]);
+    // Same ranges as extractROIByOtsuCrop (degree scale: 0-360)
+    const inRange1 = h >= 0 && h <= 50 && s >= 15 && v >= 60;
+    const inRange2 = h >= 310 && h <= 360 && s >= 15 && v >= 60;
+    if (inRange1 || inRange2) skinCount++;
+  }
+  return skinCount / total;
+}
+
+/**
+ * Simple center-square crop for images that are already tightly cropped.
+ * No Otsu, no BFS flood-fill — just ensures a square aspect ratio.
+ */
+function centerSquareCropFloat(
+  rgb: Float32Array, width: number, height: number
+): { rgb: Float32Array; cropW: number; cropH: number; roi: { x: number; y: number; width: number; height: number } } {
+  const minDim = Math.min(width, height);
+  const offsetX = Math.floor((width - minDim) / 2);
+  const offsetY = Math.floor((height - minDim) / 2);
+
+  const cropped = new Float32Array(minDim * minDim * 3);
+  for (let y = 0; y < minDim; y++) {
+    for (let x = 0; x < minDim; x++) {
+      const src = ((offsetY + y) * width + (offsetX + x)) * 3;
+      const dst = (y * minDim + x) * 3;
+      cropped[dst] = rgb[src];
+      cropped[dst + 1] = rgb[src + 1];
+      cropped[dst + 2] = rgb[src + 2];
+    }
+  }
+
+  return {
+    rgb: cropped,
+    cropW: minDim,
+    cropH: minDim,
+    roi: { x: offsetX, y: offsetY, width: minDim, height: minDim }
+  };
+}
+
 function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height: number): PreprocessingResult {
   const modelSize = getModelInputSize();
   const base = Float32Array.from(rgbBytes, (v) => v);
 
-  // Step 1: Otsu's threshold loose crop (tighter production padding for better zoom)
-  const { rgb: croppedRgb, cropW, cropH, roi } = extractROIByOtsuCrop(base, width, height, 0.25);
+  // Stage 0: Smart detection — skip Otsu cropping on already-tight nail crops.
+  // Pre-cropped images (e.g., uploaded test images at 224x224 or 640x640) are
+  // already the ideal crop. Running the full 2-stage Otsu on them destroys the
+  // image by re-cropping into tiny fragments that get upscaled to blurry 384x384.
+  const maxDim = Math.max(width, height);
+  const skinRatio = computeSkinRatio(base, width, height);
+  const isAlreadyCropped = maxDim <= 800 && skinRatio > 0.30;
 
-  // Step 2: Letterbox resize to model input size (preserves aspect ratio, black padding)
-  const letterboxed = letterboxResizeRgb(croppedRgb, cropW, cropH, modelSize, modelSize);
+  let cropRgb: Float32Array;
+  let cropW: number;
+  let cropH: number;
+  let roi: { x: number; y: number; width: number; height: number } | undefined;
 
-  // Step 3: CLAHE on L-channel (clipLimit=1.5, grid=8×8)
-  const clahed = applyCLAHE(letterboxed, modelSize, modelSize, 1.5, 8);
+  if (isAlreadyCropped) {
+    // Image is already a tight nail crop — skip destructive Otsu stages.
+    // Just center-square crop to normalize aspect ratio.
+    const sq = centerSquareCropFloat(base, width, height);
+    cropRgb = sq.rgb;
+    cropW = sq.cropW;
+    cropH = sq.cropH;
+    roi = sq.roi;
+  } else {
+    // Camera capture path: center crop first, then skin detection + Otsu.
+    //
+    // Strategy:
+    //   1. Center-crop to guide area (35% × 55%) — eliminates background noise
+    //   2. Skin detection on the center crop — finger is now 30-50% of the image
+    //      so detection is reliable (was failing at 2-3% on the full frame)
+    //   3. Otsu on the finger region — isolates the bright nail bed from skin
+    //   4. Fine Otsu refinement — tightens to just the nail plate
 
-  // Step 4: Grey-world white balance
-  const balanced = applyGreyWorld(clahed, modelSize, modelSize);
+    // Step 1: Center crop to match guide area with margin
+    const cropW_ratio = 0.35;
+    const cropH_ratio = 0.55;
+    const ccW = Math.round(width * cropW_ratio);
+    const ccH = Math.round(height * cropH_ratio);
+    const ccOffX = Math.round((width - ccW) / 2);
+    const ccOffY = Math.round((height - ccH) / 2);
 
-  // Step 5: Gaussian blur (3×3)
-  const blurred = blurRgb(balanced, modelSize, modelSize);
+    const centerCropped = new Float32Array(ccW * ccH * 3);
+    for (let y = 0; y < ccH; y++) {
+      for (let x = 0; x < ccW; x++) {
+        const src = ((ccOffY + y) * width + (ccOffX + x)) * 3;
+        const dst = (y * ccW + x) * 3;
+        centerCropped[dst] = base[src];
+        centerCropped[dst + 1] = base[src + 1];
+        centerCropped[dst + 2] = base[src + 2];
+      }
+    }
+
+    // Step 2+3: Skin detection + Otsu on the center crop to find the nail
+    const coarse = extractROIByOtsuCrop(centerCropped, ccW, ccH, 0.05);
+
+    // Step 4: Fine Otsu refinement to tighten to just the nail plate
+    const fine = refineNailCropByOtsu(coarse.rgb, coarse.cropW, coarse.cropH, 0.03);
+
+    cropRgb = fine.rgb;
+    cropW = fine.cropW;
+    cropH = fine.cropH;
+    // Map ROI coordinates back to the original image space
+    roi = coarse.roi
+      ? { x: ccOffX + coarse.roi.x, y: ccOffY + coarse.roi.y, width: coarse.roi.width, height: coarse.roi.height }
+      : { x: ccOffX, y: ccOffY, width: ccW, height: ccH };
+  }
+
+  // Apply Grey World White Balance on the crop to normalize lighting
+  const gw = applyGreyWorld(cropRgb, cropW, cropH);
+
+  // Apply CLAHE on L-channel to highlight micro-texture (ridges/lines)
+  const clahe = applyCLAHE(gw, cropW, cropH, 3.0, 8);
+
+  // Geometric Normalization (Letterboxing) to 384x384 to preserve aspect ratios
+  const letterboxed = letterboxResizeRgb(clahe, cropW, cropH, modelSize, modelSize);
 
   return {
-    rgb: Uint8Array.from(blurred, (v) => clampByte(v) | 0),
+    rgb: Uint8Array.from(letterboxed, (v) => clampByte(v) | 0),
     roi
   };
 }
@@ -1161,10 +1541,24 @@ function mapToPrediction(
     inferenceTimeMs: number; 
     quality: InferenceQualityMetadata;
     roi?: { x: number; y: number; width: number; height: number };
+    imageUri?: string;
   }
 ): TflitePrediction {
-  // Safety: reject extremely dark images
-  if (options.quality.brightness < 0.1) {
+  // Safety: reject extremely dark, blurry, low-contrast, or non-nail images (e.g. faces/plain backgrounds)
+  const isBlurry = options.quality.sharpness < 0.15;
+  const isLowContrast = options.quality.contrast < 0.12;
+  const isExtremelyLowQuality = options.quality.qualityScore < 0.38;
+  const isNoNail = options.quality.dominantRegionRatio < 0.08;
+
+  if (options.quality.brightness < 0.1 || isBlurry || isLowContrast || isExtremelyLowQuality || isNoNail) {
+    const flags = [...options.quality.qualityFlags];
+    if (isNoNail && !flags.some(f => f.includes('No nail'))) {
+      flags.push('No nail clearly detected. Please position your fingernail inside the center guide frame.');
+    }
+    if (isExtremelyLowQuality && flags.length === 0) {
+      flags.push('Image does not appear to contain a clear, well-focused nail. Please align your nail inside the guide.');
+    }
+    
     return {
       label: 'unidentified',
       confidence: 0,
@@ -1172,9 +1566,10 @@ function mapToPrediction(
       runtimeMode,
       inferenceTimeMs: Math.max(0, Math.round(options.inferenceTimeMs)),
       rawProbabilities: values,
-      qualityScore: 0,
-      qualityFlags: ['too_dark'],
+      qualityScore: Number(options.quality.qualityScore.toFixed(4)),
+      qualityFlags: flags,
       roi: options.roi,
+      imageUri: options.imageUri,
     };
   }
 
@@ -1214,24 +1609,35 @@ function mapToPrediction(
   // Dynamic, risk-aware thresholding system
   const getThresholdForLabel = (label: DiagnosisLabel, margin: number): number => {
     switch (label) {
-      case 'Acral Lentiginous Melanoma':
-        // High risk: requires 55% base certainty, 60% if the margin is thin
-        return margin < 0.1 ? 0.60 : 0.55;
       case 'clubbing':
         // High risk systemic indicator: requires 50% certainty
         return 0.50;
-      case 'onychogryphosis':
+      case 'beau_lines':
         // Moderate risk: use standard threshold
         return 0.44;
-      case 'healthy':
+      case 'pitting':
+        // Moderate risk: use standard threshold
+        return 0.44;
+      case 'healthy_nails':
         // Low risk: allow identifying healthy nails at slightly lower confidence (40%)
-        // provided the second-best guess isn't a high-risk condition.
-        const almProb = finalProbs[ALM_INDEX] ?? 0;
+        // provided the second-best guess isn't a high-risk/moderate condition.
         const clubbingProb = finalProbs[CLUBBING_INDEX] ?? 0;
-        if (almProb > 0.15 || clubbingProb > 0.18) {
-          return 0.55; // Raise threshold if a high-risk condition is "whispering"
+        const beauProb = finalProbs[BEAU_LINES_INDEX] ?? 0;
+        const pittingProb = finalProbs[PITTING_INDEX] ?? 0;
+        const healthyProb = finalProbs[HEALTHY_NAILS_INDEX] ?? 0;
+        if (clubbingProb > 0.18 || beauProb > 0.22 || pittingProb > 0.22) {
+          return 0.55; // Raise threshold if another condition is "whispering"
         }
         return 0.40;
+      case 'acral_lentiginous_melanoma':
+        // High risk
+        return 0.60;
+      case 'blue_finger':
+        // High risk
+        return 0.50;
+      case 'koilonychia':
+      case 'muehrckes_lines':
+        return 0.44;
       default:
         return LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD;
     }
@@ -1255,6 +1661,7 @@ function mapToPrediction(
     qualityScore: Number(options.quality.qualityScore.toFixed(4)),
     qualityFlags: options.quality.qualityFlags,
     roi: options.roi,
+    imageUri: options.imageUri,
   };
 }
 
@@ -1396,7 +1803,9 @@ async function preprocessNativeImageToRgb(
     height: roi.height * (originalHeight / decodedHeight),
   } : undefined;
 
-  // Output is already at model input size from the letterbox resize
+  // Evaluate quality on the PROCESSED (Otsu-cropped + letterboxed) image,
+  // not the raw frame. After cropping, the nail fills most of the 384×384
+  // input, so dominantRegionRatio reflects the model's actual view.
   return {
     rgbInput: processed,
     quality: computeImageQualityMetadata(processed, modelInputSize, modelInputSize),
@@ -1633,7 +2042,80 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
   }
 
   const startedAt = Date.now();
+
+  if (Platform.OS === 'ios') {
+    runtimeMode = 'native-fallback';
+    
+    let serverIp = '127.0.0.1';
+    const hostUri = Constants?.expoConfig?.hostUri;
+    if (hostUri) {
+      serverIp = hostUri.split(':')[0];
+    }
+    const SERVER_URL = `http://${serverIp}:5000/predict`;
+    
+    try {
+      const base64Image = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+      const response = await fetch(SERVER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ image: base64Image })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      const rawProbabilities = result.probabilities;
+      
+      // Calculate quality (preprocess just to get quality/roi)
+      const { quality, roi } = await preprocessNativeImageToRgb(imageUri);
+      
+      // Dynamically crop to focus on the nail ROI if found
+      let resultImageUri = imageUri;
+      if (roi && roi.width > 10 && roi.height > 10) {
+        try {
+          const cropped = await manipulateAsync(
+            imageUri,
+            [{ crop: { originX: Math.round(roi.x), originY: Math.round(roi.y), width: Math.round(roi.width), height: Math.round(roi.height) } }],
+            { compress: 0.95, format: SaveFormat.JPEG }
+          );
+          resultImageUri = cropped.uri;
+        } catch {
+          // Fallback to original image if cropping fails
+        }
+      }
+      
+      return mapToPrediction(rawProbabilities, {
+        temperature: NATIVE_TEMPERATURE,
+        inferenceTimeMs: Date.now() - startedAt,
+        quality,
+        roi,
+        imageUri: resultImageUri
+      });
+    } catch (e) {
+      throw new Error(`iOS Server Inference failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
+  }
+
   const { rgbInput, quality, roi } = await preprocessNativeImageToRgb(imageUri);
+
+  // Dynamically crop to focus on the nail ROI if found
+  let resultImageUri = imageUri;
+  if (roi && roi.width > 10 && roi.height > 10) {
+    try {
+      const cropped = await manipulateAsync(
+        imageUri,
+        [{ crop: { originX: Math.round(roi.x), originY: Math.round(roi.y), width: Math.round(roi.width), height: Math.round(roi.height) } }],
+        { compress: 0.95, format: SaveFormat.JPEG }
+      );
+      resultImageUri = cropped.uri;
+    } catch {
+      // Fallback
+    }
+  }
 
   if (!hasNativeTfliteTurboModule()) {
     runtimeMode = 'native-fallback';
@@ -1666,6 +2148,7 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
           inferenceTimeMs: Date.now() - startedAt,
           quality,
           roi,
+          imageUri: resultImageUri,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown model error';
@@ -1725,6 +2208,7 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
       inferenceTimeMs: Date.now() - startedAt,
       quality,
       roi,
+      imageUri: resultImageUri,
     });
   } catch (error) {
     runtimeMode = 'native-fallback';
