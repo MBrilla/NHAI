@@ -309,7 +309,7 @@ export function ResultView({
           )}
         </View>
 
-        {/* Confidence Explanation */}
+        {/* Confidence Explanation 
         <View style={styles.expandableWrapper}>
           <Pressable onPress={() => setConfidenceExpanded(!confidenceExpanded)}>
             <GlassView style={styles.actionCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
@@ -379,6 +379,7 @@ export function ResultView({
             </Animated.View>
           )}
         </View>
+        */}
 
       </ScrollView>
 
