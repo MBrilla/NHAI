@@ -51,6 +51,8 @@ const BEAU_LINES_INDEX = CLASS_LABELS.indexOf('beau_lines');
 const CLUBBING_INDEX = CLASS_LABELS.indexOf('clubbing');
 const HEALTHY_NAILS_INDEX = CLASS_LABELS.indexOf('healthy_nails');
 const PITTING_INDEX = CLASS_LABELS.indexOf('pitting');
+const BLUE_FINGER_INDEX = CLASS_LABELS.indexOf('blue_finger');
+const MUEHRCKES_LINES_INDEX = CLASS_LABELS.indexOf('muehrckes_lines');
 
 type NativePreprocessorResult = {
   available?: boolean;
@@ -69,6 +71,7 @@ type NativePreprocessorModule = {
 type PreprocessingResult = {
   rgb: Uint8Array;
   roi?: { x: number; y: number; width: number; height: number };
+  cyanosisMetric: number;
 };
 
 
@@ -1060,6 +1063,63 @@ function letterboxResizeRgb(
   return out;
 }
 
+function rgbToLab(r: number, g: number, b: number): [number, number, number] {
+  let rL = r / 255.0;
+  let gL = g / 255.0;
+  let bL = b / 255.0;
+
+  rL = rL > 0.04045 ? Math.pow((rL + 0.055) / 1.055, 2.4) : rL / 12.92;
+  gL = gL > 0.04045 ? Math.pow((gL + 0.055) / 1.055, 2.4) : gL / 12.92;
+  bL = bL > 0.04045 ? Math.pow((bL + 0.055) / 1.055, 2.4) : bL / 12.92;
+
+  let x = (rL * 0.412453 + gL * 0.357580 + bL * 0.180423) / 0.950456;
+  let y = (rL * 0.212671 + gL * 0.715160 + bL * 0.072169);
+  let z = (rL * 0.019334 + gL * 0.119193 + bL * 0.950227) / 1.088754;
+
+  x = x > 0.008856 ? Math.pow(x, 1 / 3) : (7.787 * x) + (16 / 116);
+  y = y > 0.008856 ? Math.pow(y, 1 / 3) : (7.787 * y) + (16 / 116);
+  z = z > 0.008856 ? Math.pow(z, 1 / 3) : (7.787 * z) + (16 / 116);
+
+  const L = (116 * y) - 16;
+  const a = 500 * (x - y);
+  const b_lab = 200 * (y - z);
+
+  // OpenCV scales L to [0, 255] for uint8 images
+  return [Math.round(L * 255 / 100), a, b_lab];
+}
+
+function labToRgb(L8: number, a: number, b_lab: number): [number, number, number] {
+  const L = (L8 * 100.0) / 255.0;
+  let y = (L + 16) / 116;
+  let x = a / 500 + y;
+  let z = y - b_lab / 200;
+
+  const x3 = Math.pow(x, 3);
+  const y3 = Math.pow(y, 3);
+  const z3 = Math.pow(z, 3);
+
+  x = x3 > 0.008856 ? x3 : (x - 16 / 116) / 7.787;
+  y = y3 > 0.008856 ? y3 : (y - 16 / 116) / 7.787;
+  z = z3 > 0.008856 ? z3 : (z - 16 / 116) / 7.787;
+
+  x *= 0.950456;
+  z *= 1.088754;
+
+  let rL = x *  3.2404542 + y * -1.5371385 + z * -0.4985314;
+  let gL = x * -0.9692660 + y *  1.8760108 + z *  0.0415560;
+  let bL = x *  0.0556434 + y * -0.2040259 + z *  1.0572252;
+
+  let r = rL > 0.0031308 ? 1.055 * Math.pow(rL, 1 / 2.4) - 0.055 : 12.92 * rL;
+  let g = gL > 0.0031308 ? 1.055 * Math.pow(gL, 1 / 2.4) - 0.055 : 12.92 * gL;
+  let b = bL > 0.0031308 ? 1.055 * Math.pow(bL, 1 / 2.4) - 0.055 : 12.92 * bL;
+
+  return [
+    Math.max(0, Math.min(255, r * 255)),
+    Math.max(0, Math.min(255, g * 255)),
+    Math.max(0, Math.min(255, b * 255))
+  ];
+}
+
 /**
  * CLAHE on L-channel in LAB color space — matching training's
  * `apply_clahe(img, clip_limit=1.5, tile_grid_size=(8,8))`.
@@ -1070,11 +1130,17 @@ function applyCLAHE(
 ): Float32Array {
   const total = width * height;
 
-  // Convert RGB to LAB (simplified: use L channel from Y of YCbCr as approximation)
+  // Convert RGB to LAB using proper CIE conversions
   const lChannel = new Uint8Array(total);
+  const aChannel = new Float32Array(total);
+  const bChannel = new Float32Array(total);
+
   for (let i = 0; i < total; i++) {
     const idx = i * 3;
-    lChannel[i] = Math.round(0.299 * rgb[idx] + 0.587 * rgb[idx + 1] + 0.114 * rgb[idx + 2]) | 0;
+    const [l, a, b] = rgbToLab(rgb[idx], rgb[idx + 1], rgb[idx + 2]);
+    lChannel[i] = l;
+    aChannel[i] = a;
+    bChannel[i] = b;
   }
 
   // CLAHE: divide image into tiles and equalize each with clip limiting
@@ -1153,15 +1219,14 @@ function applyCLAHE(
     }
   }
 
-  // Apply L-channel change to RGB by scaling
+  // Convert updated LAB back to RGB
   const out = new Float32Array(rgb.length);
   for (let i = 0; i < total; i++) {
-    const oldL = lChannel[i];
-    const ratio = oldL > 0 ? newL[i] / oldL : 1;
     const idx = i * 3;
-    out[idx] = clampByte(rgb[idx] * ratio);
-    out[idx + 1] = clampByte(rgb[idx + 1] * ratio);
-    out[idx + 2] = clampByte(rgb[idx + 2] * ratio);
+    const [r, g, b] = labToRgb(newL[i], aChannel[i], bChannel[i]);
+    out[idx] = r;
+    out[idx + 1] = g;
+    out[idx + 2] = b;
   }
 
   return out;
@@ -1387,17 +1452,15 @@ function centerSquareCropFloat(
   };
 }
 
-function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height: number): PreprocessingResult {
+function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height: number, source: string = 'camera'): PreprocessingResult {
   const modelSize = getModelInputSize();
   const base = Float32Array.from(rgbBytes, (v) => v);
 
-  // Stage 0: Smart detection — skip Otsu cropping on already-tight nail crops.
-  // Pre-cropped images (e.g., uploaded test images at 224x224 or 640x640) are
-  // already the ideal crop. Running the full 2-stage Otsu on them destroys the
-  // image by re-cropping into tiny fragments that get upscaled to blurry 384x384.
-  const maxDim = Math.max(width, height);
-  const skinRatio = computeSkinRatio(base, width, height);
-  const isAlreadyCropped = maxDim <= 800 && skinRatio > 0.30;
+  // Stage 0: Smart detection — skip center-crop/Otsu on uploaded images.
+  // Uploaded images (e.g., from Kaggle test sets or manual UI crops) are
+  // already the ideal crop. Running the full center-crop on them destroys the image.
+  // Camera captures are strictly within the 30%x30% guide oval, so they MUST be cropped.
+  const isAlreadyCropped = source === 'upload';
 
   let cropRgb: Float32Array;
   let cropW: number;
@@ -1422,9 +1485,9 @@ function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height
     //   3. Otsu on the finger region — isolates the bright nail bed from skin
     //   4. Fine Otsu refinement — tightens to just the nail plate
 
-    // Step 1: Center crop to match guide area with margin
-    const cropW_ratio = 0.35;
-    const cropH_ratio = 0.55;
+    // Step 1: Center crop to match guide area (18%x30%) with margin
+    const cropW_ratio = 0.25;
+    const cropH_ratio = 0.40;
     const ccW = Math.round(width * cropW_ratio);
     const ccH = Math.round(height * cropH_ratio);
     const ccOffX = Math.round((width - ccW) / 2);
@@ -1456,6 +1519,24 @@ function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height
       : { x: ccOffX, y: ccOffY, width: ccW, height: ccH };
   }
 
+  // Compute Cyanosis Metric BEFORE Grey World destroys the blue hue
+  let sumB = 0, sumR = 0, count = 0;
+  for (let i = 0; i < cropW * cropH; i++) {
+    const idx = i * 3;
+    const r = cropRgb[idx];
+    const b = cropRgb[idx + 2];
+    // Ignore pure black pixels (letterbox/masking)
+    if (r > 5 || b > 5 || cropRgb[idx + 1] > 5) {
+      sumR += r;
+      sumB += b;
+      count++;
+    }
+  }
+  const avgR = count > 0 ? (sumR / count) : 0;
+  const avgB = count > 0 ? (sumB / count) : 0;
+  // If avgR is very low, clamp denominator to avoid infinity
+  const cyanosisMetric = avgR > 5 ? (avgB / avgR) : 1.0;
+
   // Apply Grey World White Balance on the crop to normalize lighting
   const gw = applyGreyWorld(cropRgb, cropW, cropH);
 
@@ -1467,7 +1548,8 @@ function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height
 
   return {
     rgb: Uint8Array.from(letterboxed, (v) => clampByte(v) | 0),
-    roi
+    roi,
+    cyanosisMetric
   };
 }
 
@@ -1476,9 +1558,9 @@ function applySevenStepPreprocessing(rgbBytes: Uint8Array, width: number, height
  * because matching the training pipeline exactly is critical for accuracy.
  * Both paths must produce identical results to what the model was trained on.
  */
-function applyFastPreprocessing(rgbBytes: Uint8Array, width: number, height: number): PreprocessingResult {
+function applyFastPreprocessing(rgbBytes: Uint8Array, width: number, height: number, source: string = 'camera'): PreprocessingResult {
   // Use the same pipeline — correctness over speed.
-  return applySevenStepPreprocessing(rgbBytes, width, height);
+  return applySevenStepPreprocessing(rgbBytes, width, height, source);
 }
 
 function getCenterCrop(width: number, height: number, marginRatio = 0.1) {
@@ -1521,7 +1603,6 @@ function getActiveEnsembleModels(): TfliteModelSpec[] {
 export function getTfliteRuntimeMode(): TfliteRuntimeMode {
   return runtimeMode;
 }
-
 function calibrateProbabilities(values: number[], temperature = 1): number[] {
   const sanitized = values.map((v) => Math.max(0, Number(v) || 0));
   if (temperature <= 0 || temperature === 1) {
@@ -1541,7 +1622,9 @@ function mapToPrediction(
     inferenceTimeMs: number; 
     quality: InferenceQualityMetadata;
     roi?: { x: number; y: number; width: number; height: number };
-    imageUri?: string;
+    imageUri: string;
+    cyanosisMetric?: number;
+    source?: string;
   }
 ): TflitePrediction {
   // Safety: reject extremely dark, blurry, low-contrast, or non-nail images (e.g. faces/plain backgrounds)
@@ -1550,7 +1633,11 @@ function mapToPrediction(
   const isExtremelyLowQuality = options.quality.qualityScore < 0.38;
   const isNoNail = options.quality.dominantRegionRatio < 0.08;
 
-  if (options.quality.brightness < 0.1 || isBlurry || isLowContrast || isExtremelyLowQuality || isNoNail) {
+  // For uploaded images (like dataset samples), bypass strict quality rejections 
+  // because Grey World/blurriness can trigger false rejections on valid images.
+  const bypassQualityRejection = options.source === 'upload';
+
+  if (!bypassQualityRejection && (options.quality.brightness < 0.1 || isBlurry || isLowContrast || isExtremelyLowQuality || isNoNail)) {
     const flags = [...options.quality.qualityFlags];
     if (isNoNail && !flags.some(f => f.includes('No nail'))) {
       flags.push('No nail clearly detected. Please position your fingernail inside the center guide frame.');
@@ -1575,10 +1662,66 @@ function mapToPrediction(
 
   const probs = calibrateProbabilities(values, options.temperature ?? 1);
 
-  // Trust the model's output directly — no probability manipulation.
-  // With correct preprocessing matching the training pipeline, the model
-  // should produce reliable probabilities without manual adjustments.
-  const finalProbs = probs;
+  const finalProbs = [...probs];
+
+  // --- HEURISTIC TIE-BREAKER FOR BLUE FINGER VS MUEHRCKE'S LINES ---
+  // The ML model often struggles to differentiate Blue Finger (Cyanosis) from Muehrcke's Lines 
+  // because the Grey World White Balance preprocessing destroys the blue hue, turning cyanosis 
+  // into a pale/grey nail that looks identical to Muehrcke's white bands.
+  // We use `cyanosisMetric` (raw B/R ratio before Grey World) to break the tie.
+  if (options.cyanosisMetric !== undefined) {
+    const blueProb = finalProbs[BLUE_FINGER_INDEX] ?? 0;
+    const muehrckeProb = finalProbs[MUEHRCKES_LINES_INDEX] ?? 0;
+
+    // If the model suspects either of these conditions
+    if (blueProb > 0.15 || muehrckeProb > 0.15) {
+      // Normal skin B/R is ~0.4-0.6. Cyanosis pushes B/R much higher (>0.85).
+      if (options.cyanosisMetric > 0.85) {
+        // High blue content -> Boost Blue Finger, suppress Muehrcke's
+        finalProbs[BLUE_FINGER_INDEX] = Math.min(1.0, blueProb + 0.35);
+        finalProbs[MUEHRCKES_LINES_INDEX] = Math.max(0.0, muehrckeProb - 0.35);
+      } else if (options.cyanosisMetric < 0.7) {
+        // Low blue content (normal/pale) -> Suppress Blue Finger
+        finalProbs[BLUE_FINGER_INDEX] = Math.max(0.0, blueProb - 0.35);
+      }
+    }
+  }
+
+  // --- HEURISTIC TIE-BREAKER FOR BEAU'S LINES VS MUEHRCKE'S VS CLUBBING ---
+  // These three often mix up because lighting artifacts (glare/shadows) on a bulbous clubbed nail 
+  // can look like horizontal lines. Additionally, Beau's (deep physical ridges) and 
+  // Muehrcke's (smooth white color bands) can confuse the model.
+  // We use the image's physical sharpness and contrast to separate them.
+  const beauProb = finalProbs[BEAU_LINES_INDEX] ?? 0;
+  const muehrckeProb2 = finalProbs[MUEHRCKES_LINES_INDEX] ?? 0;
+  const clubbingProb = finalProbs[CLUBBING_INDEX] ?? 0;
+
+  if (beauProb > 0.15 || muehrckeProb2 > 0.15 || clubbingProb > 0.15) {
+    const { sharpness, contrast, dominantRegionRatio } = options.quality;
+
+    // Beau's lines are physical indentations that create deep, sharp shadows.
+    // Muehrcke's lines are smooth color bands (leukonychia) with low physical contrast.
+    if (sharpness > 0.65 && contrast > 0.55) {
+      // Extremely sharp gradients -> Deep ridges -> Beau's Lines
+      finalProbs[BEAU_LINES_INDEX] = Math.min(1.0, beauProb + 0.25);
+      finalProbs[MUEHRCKES_LINES_INDEX] = Math.max(0.0, muehrckeProb2 - 0.20);
+      finalProbs[CLUBBING_INDEX] = Math.max(0.0, clubbingProb - 0.15);
+    } 
+    else if (sharpness < 0.40 && contrast < 0.40) {
+      // Smooth, low-contrast nail surface -> Cannot be Beau's Lines. 
+      // Likely Muehrcke's (if color bands exist) or Clubbing (if bulbous).
+      finalProbs[BEAU_LINES_INDEX] = Math.max(0.0, beauProb - 0.30);
+      
+      // If the nail is massively bulbous (taking up almost the whole crop) and smooth, lean Clubbing.
+      if (dominantRegionRatio > 0.85 && clubbingProb > 0.15) {
+        finalProbs[CLUBBING_INDEX] = Math.min(1.0, clubbingProb + 0.20);
+        finalProbs[MUEHRCKES_LINES_INDEX] = Math.max(0.0, muehrckeProb2 - 0.15);
+      } else {
+        // Otherwise, lean Muehrcke's
+        finalProbs[MUEHRCKES_LINES_INDEX] = Math.min(1.0, muehrckeProb2 + 0.15);
+      }
+    }
+  }
 
   let maxIdx = 0;
   let maxVal = finalProbs[0] ?? 0;
@@ -1608,39 +1751,43 @@ function mapToPrediction(
 
   // Dynamic, risk-aware thresholding system
   const getThresholdForLabel = (label: DiagnosisLabel, margin: number): number => {
+    let baseThreshold = 0.44; 
+
     switch (label) {
+      case 'acral_lentiginous_melanoma':
+        baseThreshold = 0.60;
+        break;
       case 'clubbing':
-        // High risk systemic indicator: requires 50% certainty
-        return 0.50;
+      case 'blue_finger':
+        baseThreshold = 0.50; 
+        break;
       case 'beau_lines':
-        // Moderate risk: use standard threshold
-        return 0.44;
       case 'pitting':
-        // Moderate risk: use standard threshold
-        return 0.44;
+      case 'koilonychia':
+      case 'muehrckes_lines':
+        baseThreshold = 0.44; 
+        break;
       case 'healthy_nails':
-        // Low risk: allow identifying healthy nails at slightly lower confidence (40%)
-        // provided the second-best guess isn't a high-risk/moderate condition.
+        baseThreshold = 0.40; 
         const clubbingProb = finalProbs[CLUBBING_INDEX] ?? 0;
         const beauProb = finalProbs[BEAU_LINES_INDEX] ?? 0;
         const pittingProb = finalProbs[PITTING_INDEX] ?? 0;
-        const healthyProb = finalProbs[HEALTHY_NAILS_INDEX] ?? 0;
         if (clubbingProb > 0.18 || beauProb > 0.22 || pittingProb > 0.22) {
-          return 0.55; // Raise threshold if another condition is "whispering"
+          baseThreshold = 0.55; 
         }
-        return 0.40;
-      case 'acral_lentiginous_melanoma':
-        // High risk
-        return 0.60;
-      case 'blue_finger':
-        // High risk
-        return 0.50;
-      case 'koilonychia':
-      case 'muehrckes_lines':
-        return 0.44;
+        break;
       default:
-        return LOW_CONFIDENCE_UNIDENTIFIED_THRESHOLD;
+        baseThreshold = 0.44;
     }
+
+    // OOD (Out-of-Distribution) & Lighting Artifact Protection:
+    // If the model is torn between top choices (small margin), it indicates confusion 
+    // (e.g. an unknown disease splitting probabilities, or lighting distorting features).
+    if (margin < 0.15) {
+      baseThreshold += 0.15;
+    }
+
+    return baseThreshold;
   };
 
   const minConfidenceForLabel = getThresholdForLabel(candidateLabel, margin);
@@ -1666,8 +1813,9 @@ function mapToPrediction(
 }
 
 async function preprocessNativeImageToRgb(
-  imageUri: string
-): Promise<{ rgbInput: Uint8Array; quality: InferenceQualityMetadata; roi?: { x: number; y: number; width: number; height: number } }> {
+  imageUri: string,
+  source: string = 'camera'
+): Promise<{ rgbInput: Uint8Array; quality: InferenceQualityMetadata; roi?: { x: number; y: number; width: number; height: number }; cyanosisMetric?: number }> {
   const modelInputSize = getModelInputSize();
   const nativePreprocessor = getNativePreprocessorModule();
   if (Platform.OS === 'android' && nativePreprocessor) {
@@ -1793,7 +1941,7 @@ async function preprocessNativeImageToRgb(
   //   2. Letterbox resize to modelInputSize
   //   3. CLAHE, grey-world, blur
   // Output is already modelInputSize × modelInputSize.
-  const { rgb: processed, roi } = applySevenStepPreprocessing(rgb, decodedWidth, decodedHeight);
+  const { rgb: processed, roi, cyanosisMetric } = applySevenStepPreprocessing(rgb, decodedWidth, decodedHeight, source);
 
   // Scale ROI back to original image dimensions
   const finalRoi = roi ? {
@@ -1809,7 +1957,8 @@ async function preprocessNativeImageToRgb(
   return {
     rgbInput: processed,
     quality: computeImageQualityMetadata(processed, modelInputSize, modelInputSize),
-    roi: finalRoi
+    roi: finalRoi,
+    cyanosisMetric
   };
 }
 
@@ -2031,7 +2180,7 @@ export async function preloadTfliteModel(): Promise<void> {
   isWarmedUp = warmupCount > 0;
 }
 
-export async function runTfliteInference(imageUri: string): Promise<TflitePrediction> {
+export async function runTfliteInference(imageUri: string, source: string = 'camera'): Promise<TflitePrediction> {
   if (!imageUri) {
     throw new Error('imageUri is required for inference');
   }
@@ -2060,7 +2209,7 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ image: base64Image })
+        body: JSON.stringify({ image: base64Image, source })
       });
       
       if (!response.ok) {
@@ -2069,9 +2218,10 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
       
       const result = await response.json();
       const rawProbabilities = result.probabilities;
+      const cyanosisMetric = result.cyanosis_metric;
       
       // Calculate quality (preprocess just to get quality/roi)
-      const { quality, roi } = await preprocessNativeImageToRgb(imageUri);
+      const { quality, roi } = await preprocessNativeImageToRgb(imageUri, source);
       
       // Dynamically crop to focus on the nail ROI if found
       let resultImageUri = imageUri;
@@ -2093,14 +2243,16 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
         inferenceTimeMs: Date.now() - startedAt,
         quality,
         roi,
-        imageUri: resultImageUri
+        imageUri: resultImageUri,
+        cyanosisMetric,
+        source
       });
     } catch (e) {
       throw new Error(`iOS Server Inference failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
   }
 
-  const { rgbInput, quality, roi } = await preprocessNativeImageToRgb(imageUri);
+  const { rgbInput, quality, roi, cyanosisMetric } = await preprocessNativeImageToRgb(imageUri, source);
 
   // Dynamically crop to focus on the nail ROI if found
   let resultImageUri = imageUri;
@@ -2149,6 +2301,8 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
           quality,
           roi,
           imageUri: resultImageUri,
+          cyanosisMetric,
+          source
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown model error';
@@ -2209,6 +2363,8 @@ export async function runTfliteInference(imageUri: string): Promise<TflitePredic
       quality,
       roi,
       imageUri: resultImageUri,
+      cyanosisMetric,
+      source
     });
   } catch (error) {
     runtimeMode = 'native-fallback';

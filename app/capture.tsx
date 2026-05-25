@@ -3,12 +3,11 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Image, ImageBackground, Pressable, StyleSheet, Text, View, useWindowDimensions, SafeAreaView, StatusBar, Platform } from 'react-native';
+import { Image, ImageBackground, Platform, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { GlassView } from '@/components/nailscan/glass-view';
-import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { moderateScale, scale, verticalScale, scaleFont } from '@/utils/ui';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -16,28 +15,27 @@ export default function CaptureScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [imageSource, setImageSource] = useState<'camera' | 'upload'>('camera');
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [autoFocus, setAutoFocus] = useState<'on' | 'off'>('on');
 
   if (!permission) {
-    return <View />;
+    return <View style={styles.container} />;
   }
 
   if (!permission.granted) {
     return (
-      <ImageBackground 
+      <ImageBackground
         source={require('@/assets/images/background.png')}
         style={styles.container}
         resizeMode="cover"
-        imageStyle={{ opacity: 0.8 }}
       >
-        <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 0 }}>
-          <View style={styles.permissionContainer}>
-            <Text style={styles.permissionText}>We need your permission to show the camera</Text>
-            <Pressable onPress={requestPermission} style={styles.permissionBtn}>
-              <Text style={styles.permissionBtnText}>Grant Permission</Text>
-            </Pressable>
-          </View>
+        <SafeAreaView style={styles.permissionContainer}>
+          <Ionicons name="camera-outline" size={64} color="#64789A" />
+          <Text style={styles.permissionText}>We need your permission to use the camera</Text>
+          <Pressable style={styles.permissionBtn} onPress={requestPermission}>
+            <Text style={styles.permissionBtnText}>Grant Permission</Text>
+          </Pressable>
         </SafeAreaView>
       </ImageBackground>
     );
@@ -62,6 +60,7 @@ export default function CaptureScreen() {
           { compress: 0.95, format: SaveFormat.JPEG }
         );
 
+        setImageSource('camera');
         setCapturedImage(cropped.uri);
       } catch (err) {
         console.error("Capture error:", err);
@@ -92,6 +91,7 @@ export default function CaptureScreen() {
           { compress: 0.95, format: SaveFormat.JPEG }
         );
 
+        setImageSource('upload');
         setCapturedImage(cropped.uri);
       }
     } catch (err) {
@@ -103,7 +103,7 @@ export default function CaptureScreen() {
     if (capturedImage) {
       router.push({
         pathname: '/processing',
-        params: { imageUri: capturedImage },
+        params: { imageUri: capturedImage, source: imageSource },
       });
     }
   };
@@ -111,7 +111,7 @@ export default function CaptureScreen() {
   const isTallScreen = screenHeight > 800;
 
   return (
-    <ImageBackground 
+    <ImageBackground
       source={require('@/assets/images/background.png')}
       style={styles.container}
       resizeMode="cover"
@@ -120,7 +120,7 @@ export default function CaptureScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 0 }}>
         <View style={styles.contentWrapper}>
-          
+
           {/* Header */}
           <View style={styles.header}>
             <Pressable onPress={() => router.back()} style={styles.headerIconBtn}>
@@ -155,9 +155,9 @@ export default function CaptureScreen() {
 
           {/* Camera Preview */}
           <View style={[styles.previewContainer, !isTallScreen && { marginVertical: 6 }]}>
-            <GlassView 
-              style={styles.previewBorder} 
-              intensity={16} 
+            <GlassView
+              style={styles.previewBorder}
+              intensity={16}
               borderRadius={24}
               backgroundColor="rgba(255,255,255,0.16)"
               borderColor="rgba(255,255,255,0.9)"
@@ -171,8 +171,8 @@ export default function CaptureScreen() {
                     enableTorch={flashEnabled}
                     autofocus={autoFocus}
                   >
-                    <Pressable 
-                      style={styles.overlay} 
+                    <Pressable
+                      style={styles.overlay}
                       onPress={() => {
                         setAutoFocus('off');
                         setTimeout(() => setAutoFocus('on'), 100);
@@ -180,23 +180,23 @@ export default function CaptureScreen() {
                     >
                       {/* Corner Guides */}
                       <CornerGuides />
-                      
+
                       <View style={styles.guideFrame} />
-                      
+
                       <View style={styles.guideInstructionBox}>
                         <Text style={styles.guideInstructionText}>Place one nail inside this guide</Text>
                       </View>
-                      
-                      <Pressable 
-                        style={styles.flashBtn} 
+
+                      <Pressable
+                        style={styles.flashBtn}
                         onPress={(e) => {
                           e.stopPropagation();
                           setFlashEnabled(!flashEnabled);
                         }}
                       >
-                        <Ionicons 
-                          name={flashEnabled ? "flash" : "flash-off"} 
-                          size={28} 
+                        <Ionicons
+                          name={flashEnabled ? "flash" : "flash-off"}
+                          size={28}
                           color="white"
                           style={styles.flashIconShadow}
                         />
@@ -217,8 +217,8 @@ export default function CaptureScreen() {
 
           {/* Action Buttons */}
           <View style={styles.actionRow}>
-            <Pressable 
-              style={[styles.actionBtn, styles.primaryBtn]} 
+            <Pressable
+              style={[styles.actionBtn, styles.primaryBtn]}
               onPress={capturedImage ? handleAnalyze : handleTakePhoto}
             >
               <LinearGradient
@@ -228,10 +228,10 @@ export default function CaptureScreen() {
                 style={StyleSheet.absoluteFillObject}
               />
               <View style={styles.actionBtnContent}>
-                <Ionicons 
-                  name={capturedImage ? "analytics" : "camera"} 
-                  size={22} 
-                  color="white" 
+                <Ionicons
+                  name={capturedImage ? "analytics" : "camera"}
+                  size={22}
+                  color="white"
                 />
                 <View style={styles.actionTextCol}>
                   <Text style={styles.actionTitle}>{capturedImage ? 'Analyze Image' : 'Take Photo'}</Text>
@@ -240,15 +240,15 @@ export default function CaptureScreen() {
               </View>
             </Pressable>
 
-            <Pressable 
-              style={[styles.actionBtn, styles.secondaryBtn]} 
+            <Pressable
+              style={[styles.actionBtn, styles.secondaryBtn]}
               onPress={capturedImage ? () => setCapturedImage(null) : handleUploadImage}
             >
               <View style={styles.actionBtnContent}>
-                <Ionicons 
-                  name={capturedImage ? "refresh" : "cloud-upload-outline"} 
-                  size={22} 
-                  color="#086BFF" 
+                <Ionicons
+                  name={capturedImage ? "refresh" : "cloud-upload-outline"}
+                  size={22}
+                  color="#086BFF"
                 />
                 <View style={styles.actionTextCol}>
                   <Text style={[styles.actionTitle, { color: '#086BFF' }]}>{capturedImage ? 'Retake Photo' : 'Upload'}</Text>
@@ -257,7 +257,7 @@ export default function CaptureScreen() {
               </View>
             </Pressable>
           </View>
-          
+
         </View>
       </SafeAreaView>
     </ImageBackground>
@@ -408,8 +408,8 @@ const styles = StyleSheet.create({
   bottomRightHorizontal: { bottom: 20, right: 20, width: 34, height: 5 },
   bottomRightVertical: { bottom: 20, right: 20, width: 5, height: 34 },
   guideFrame: {
-    width: '28%',
-    height: '46%',
+    width: '30%',
+    height: '30%',
     borderWidth: 3.8,
     borderColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 100,

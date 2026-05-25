@@ -19,7 +19,7 @@ const INFERENCE_TIMEOUT_MS = 25000;
 export default function ProcessingScreen() {
   const router = useRouter();
   const colors = useNailScanColors();
-  const params = useLocalSearchParams<{ imageUri?: string }>();
+  const params = useLocalSearchParams<{ imageUri?: string; source?: string }>();
   const [prediction, setPrediction] = useState<TflitePrediction | null>(null);
   const [inferenceError, setInferenceError] = useState<string | null>(null);
   const [runtimeMode, setRuntimeMode] = useState<TfliteRuntimeMode>('native-fallback');
@@ -63,7 +63,7 @@ export default function ProcessingScreen() {
       return;
     }
 
-    runTfliteInference(params.imageUri)
+    runTfliteInference(params.imageUri, (params.source as string) || 'camera')
       .then((result) => {
         setPrediction(result);
         setInferenceError(null);
@@ -110,6 +110,7 @@ export default function ProcessingScreen() {
             imageUri: finalImageUri,
             originalImageUri: originalImageUri,
             roi: prediction.roi ? JSON.stringify(prediction.roi) : '',
+            qualityFlags: JSON.stringify(prediction.qualityFlags || []),
           },
         });
       }, 1500);

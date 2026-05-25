@@ -12,6 +12,7 @@ export default function ResultScreen() {
     originalImageUri?: string;
     roi?: string;
     timestamp?: string;
+    qualityFlags?: string;
   }>();
   
   const label = params.label || 'Healthy';
@@ -20,6 +21,7 @@ export default function ResultScreen() {
   const originalImageUri = params.originalImageUri;
   const roi = params.roi ? JSON.parse(params.roi) : undefined;
   const timestamp = params.timestamp ? parseInt(params.timestamp) : Date.now();
+  const qualityFlags = params.qualityFlags ? JSON.parse(params.qualityFlags) : [];
 
   return (
     <ImageBackground 
@@ -36,6 +38,7 @@ export default function ResultScreen() {
           originalImageUri={originalImageUri}
           roi={roi}
           timestamp={timestamp}
+          qualityFlags={qualityFlags}
           isHistory={false}
           onBack={() => router.back()}
           onScanAgain={() => router.replace('/capture')}

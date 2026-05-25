@@ -41,7 +41,15 @@ def compute_skin_ratio(img_bgr):
         return 0.0
     return float(np.count_nonzero(skin_mask)) / total
 
-def preprocess_image(image: Image.Image, input_details):
+def preprocess_image(image: Image.Image, input_details, source="camera"):
+    """
+    Python equivalent of the React Native preprocessing pipeline:
+    1. Square center crop (only for camera captures, bypassed for square uploads)
+    2. Skin Detection + Otsu's Thresholding (to isolate the nail bed)
+    3. Letterbox to 384x384 (pads with black)
+    4. Grey-world color correction
+    5. CLAHE contrast enhancement
+    """
     # Convert PIL Image to BGR OpenCV image
     open_cv_image = np.array(image.convert('RGB')) 
     img = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
@@ -49,11 +57,9 @@ def preprocess_image(image: Image.Image, input_details):
     h, w, c = img.shape
 
     # Smart detection: skip Otsu cropping for pre-cropped images.
-    # Images that are already small (<=800px) and predominantly skin/nail (>30%)
-    # are already tight nail crops. Running Otsu on them is destructive.
-    max_dim = max(h, w)
-    skin_ratio = compute_skin_ratio(img)
-    is_already_cropped = max_dim <= 800 and skin_ratio > 0.30
+    # Uploaded images are assumed to be tight crops (like Kaggle test sets).
+    # Camera captures must be center-cropped to the guide oval first.
+    is_already_cropped = source == "upload"
 
     if is_already_cropped:
         # Just center-square crop to normalize aspect ratio
@@ -70,8 +76,8 @@ def preprocess_image(image: Image.Image, input_details):
 
         # Step 1: Center crop to match guide area with margin
         try:
-            crop_w_ratio = 0.35
-            crop_h_ratio = 0.55
+            crop_w_ratio = 0.25
+            crop_h_ratio = 0.40
             cc_w = int(w * crop_w_ratio)
             cc_h = int(h * crop_h_ratio)
             x_off = (w - cc_w) // 2
@@ -188,6 +194,16 @@ def preprocess_image(image: Image.Image, input_details):
         except Exception:
             pass
 
+    # Calculate Cyanosis Metric before Grey World destroys the blue hue
+    cyanosis_metric = 1.0
+    try:
+        b_mean_raw = np.mean(img[:, :, 0])
+        r_mean_raw = np.mean(img[:, :, 2])
+        if r_mean_raw > 5:
+            cyanosis_metric = float(b_mean_raw / r_mean_raw)
+    except Exception:
+        pass
+
     # Stage 3 (Grey World): Balance color channels to normalize lighting conditions
     try:
         b_mean = np.mean(img[:, :, 0])
@@ -242,7 +258,7 @@ def preprocess_image(image: Image.Image, input_details):
     else:
         img_array = img.astype(np.float32)
 
-    return np.expand_dims(img_array, axis=0)
+    return np.expand_dims(img_array, axis=0), cyanosis_metric
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -259,7 +275,8 @@ def predict():
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
         
         # Preprocess
-        input_data = preprocess_image(image, input_details)
+        source = data.get('source', 'camera')
+        input_data, cyanosis_metric = preprocess_image(image, input_details, source)
         
         # Run inference
         interpreter.set_tensor(input_details[0]['index'], input_data)
@@ -269,7 +286,8 @@ def predict():
         probabilities = output_data[0].tolist()
         
         return jsonify({
-            'probabilities': probabilities
+            'probabilities': probabilities,
+            'cyanosis_metric': cyanosis_metric
         })
         
     except Exception as e:

@@ -3,7 +3,7 @@ import { getConditionInfo } from '@/data/diagnosis';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, Modal, Dimensions } from 'react-native';
+import { Animated, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface ResultViewProps {
   label: string;
@@ -12,6 +12,7 @@ interface ResultViewProps {
   originalImageUri?: string;
   roi?: { x: number; y: number; width: number; height: number };
   timestamp?: number;
+  qualityFlags?: string[];
   isHistory?: boolean;
   onBack: () => void;
   onScanAgain: () => void;
@@ -26,6 +27,7 @@ export function ResultView({
   originalImageUri,
   roi,
   timestamp,
+  qualityFlags,
   isHistory = false,
   onBack,
   onScanAgain,
@@ -36,6 +38,7 @@ export function ResultView({
 
   const [treatmentExpanded, setTreatmentExpanded] = useState(false);
   const [recsExpanded, setRecsExpanded] = useState(false);
+  const [confidenceExpanded, setConfidenceExpanded] = useState(false);
 
   const [showDetectionModal, setShowDetectionModal] = useState(false);
   const [imgWidth, setImgWidth] = useState(1);
@@ -192,46 +195,54 @@ export function ResultView({
           )}
         </GlassView>
 
-        {/* Analysis Details */}
+
+
+        {/* Hide Analysis Details if Unidentified */}
+        {!isUnidentified && (
+          <GlassView style={styles.glassCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
+            <Text style={styles.sectionHeading}>Analysis Details</Text>
+
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Shape</Text>
+              <Text style={styles.detailText}>{info.shapeDetail || 'N/A'}</Text>
+            </View>
+            <View style={styles.divider} />
+
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Color</Text>
+              <Text style={styles.detailText}>{info.colorDetail || 'N/A'}</Text>
+            </View>
+            <View style={styles.divider} />
+
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Texture</Text>
+              <Text style={styles.detailText}>{info.textureDetail || 'N/A'}</Text>
+            </View>
+          </GlassView>
+        )}
+
+        {/* Additional Information / Guidance */}
         <GlassView style={styles.glassCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
-          <Text style={styles.sectionHeading}>Analysis Details</Text>
+          <Text style={styles.sectionHeading}>{isUnidentified ? 'Guidance' : 'Additional Information'}</Text>
 
           <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Shape</Text>
-            <Text style={styles.detailText}>{info.shapeDetail || 'N/A'}</Text>
-          </View>
-          <View style={styles.divider} />
-
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Color</Text>
-            <Text style={styles.detailText}>{info.colorDetail || 'N/A'}</Text>
-          </View>
-          <View style={styles.divider} />
-
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Texture</Text>
-            <Text style={styles.detailText}>{info.textureDetail || 'N/A'}</Text>
-          </View>
-        </GlassView>
-
-        {/* Additional Information */}
-        <GlassView style={styles.glassCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
-          <Text style={styles.sectionHeading}>Additional Information</Text>
-
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Additional Findings</Text>
+            <Text style={styles.detailLabel}>{isUnidentified ? 'Why did this happen?' : 'Additional Findings'}</Text>
             <Text style={styles.detailText}>{info.description}</Text>
           </View>
-          <View style={styles.divider} />
 
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Causes</Text>
-            {info.causes.length > 0 ? info.causes.map((cause, i) => (
-              <Text key={i} style={styles.detailText}>• {cause}</Text>
-            )) : <Text style={styles.detailText}>Unknown</Text>}
-          </View>
+          {!isUnidentified && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Causes</Text>
+                {info.causes.length > 0 ? info.causes.map((cause, i) => (
+                  <Text key={i} style={styles.detailText}>• {cause}</Text>
+                )) : <Text style={styles.detailText}>Unknown</Text>}
+              </View>
+            </>
+          )}
 
-          {info.validatedSource && (
+          {info.validatedSource && !isUnidentified && (
             <>
               <View style={styles.divider} />
               <View style={styles.detailItem}>
@@ -242,38 +253,40 @@ export function ResultView({
           )}
         </GlassView>
 
-        {/* Treatment / Care */}
-        <View style={styles.expandableWrapper}>
-          <Pressable onPress={() => setTreatmentExpanded(!treatmentExpanded)}>
-            <GlassView style={styles.actionCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
-              <View style={styles.actionIconBox}>
-                <Ionicons name="medical-outline" size={20} color="#006DFF" />
-              </View>
-              <Text style={styles.actionText}>Treatment / Care</Text>
-              <Ionicons name={treatmentExpanded ? "chevron-up" : "chevron-forward"} size={20} color="#90B2E4" />
-            </GlassView>
-          </Pressable>
-          {treatmentExpanded && (
-            <Animated.View style={styles.expandableContent}>
-              <GlassView style={styles.expandableCard} intensity={60} borderRadius={18} backgroundColor="rgba(255,255,255,0.4)" borderColor="rgba(255,255,255,0.6)" borderWidth={1}>
-                {info.treatment.length > 0 ? info.treatment.map((t, i) => (
-                  <Text key={i} style={styles.expandableDetailText}>• {t}</Text>
-                )) : (
-                  <Text style={styles.expandableDetailText}>No specific treatment guidelines available.</Text>
-                )}
+        {/* Treatment / Care (Hidden for Unidentified) */}
+        {!isUnidentified && (
+          <View style={styles.expandableWrapper}>
+            <Pressable onPress={() => setTreatmentExpanded(!treatmentExpanded)}>
+              <GlassView style={styles.actionCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
+                <View style={styles.actionIconBox}>
+                  <Ionicons name="medical-outline" size={20} color="#006DFF" />
+                </View>
+                <Text style={styles.actionText}>Treatment / Care</Text>
+                <Ionicons name={treatmentExpanded ? "chevron-up" : "chevron-forward"} size={20} color="#90B2E4" />
               </GlassView>
-            </Animated.View>
-          )}
-        </View>
+            </Pressable>
+            {treatmentExpanded && (
+              <Animated.View style={styles.expandableContent}>
+                <GlassView style={styles.expandableCard} intensity={60} borderRadius={18} backgroundColor="rgba(255,255,255,0.4)" borderColor="rgba(255,255,255,0.6)" borderWidth={1}>
+                  {info.treatment.length > 0 ? info.treatment.map((t, i) => (
+                    <Text key={i} style={styles.expandableDetailText}>• {t}</Text>
+                  )) : (
+                    <Text style={styles.expandableDetailText}>No specific treatment guidelines available.</Text>
+                  )}
+                </GlassView>
+              </Animated.View>
+            )}
+          </View>
+        )}
 
-        {/* Recommendations */}
+        {/* Recommendations / Tips */}
         <View style={styles.expandableWrapper}>
           <Pressable onPress={() => setRecsExpanded(!recsExpanded)}>
             <GlassView style={styles.actionCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
               <View style={styles.actionIconBox}>
-                <Ionicons name="shield-checkmark-outline" size={20} color="#006DFF" />
+                <Ionicons name={isUnidentified ? "camera-outline" : "shield-checkmark-outline"} size={20} color="#006DFF" />
               </View>
-              <Text style={styles.actionText}>Recommendations</Text>
+              <Text style={styles.actionText}>{isUnidentified ? 'Tips for a Better Scan' : 'Recommendations'}</Text>
               <Ionicons name={recsExpanded ? "chevron-up" : "chevron-forward"} size={20} color="#90B2E4" />
             </GlassView>
           </Pressable>
@@ -284,6 +297,83 @@ export function ResultView({
                   <Text key={i} style={styles.expandableDetailText}>• {r}</Text>
                 )) : (
                   <Text style={styles.expandableDetailText}>No recommendations available.</Text>
+                )}
+                {isUnidentified && info.treatment.length > 0 && (
+                  <>
+                    <View style={styles.divider} />
+                    <Text style={styles.expandableDetailText}>• {info.treatment[0]}</Text>
+                  </>
+                )}
+              </GlassView>
+            </Animated.View>
+          )}
+        </View>
+
+        {/* Confidence Explanation */}
+        <View style={styles.expandableWrapper}>
+          <Pressable onPress={() => setConfidenceExpanded(!confidenceExpanded)}>
+            <GlassView style={styles.actionCard} intensity={80} borderRadius={24} backgroundColor="rgba(255,255,255,0.6)" borderColor="rgba(255,255,255,0.9)" borderWidth={1.5}>
+              <View style={styles.actionIconBox}>
+                <Ionicons name="analytics-outline" size={20} color="#006DFF" />
+              </View>
+              <Text style={styles.actionText}>Confidence Breakdown</Text>
+              <Ionicons name={confidenceExpanded ? "chevron-up" : "chevron-forward"} size={20} color="#90B2E4" />
+            </GlassView>
+          </Pressable>
+          {confidenceExpanded && (
+            <Animated.View style={styles.expandableContent}>
+              <GlassView style={styles.expandableCard} intensity={60} borderRadius={18} backgroundColor="rgba(255,255,255,0.4)" borderColor="rgba(255,255,255,0.6)" borderWidth={1}>
+                <Text style={[styles.expandableDetailText, { marginBottom: 12, fontWeight: '800' }]}>
+                  How is this calculated?
+                </Text>
+                <Text style={[styles.expandableDetailText, { fontWeight: '600', marginBottom: 12 }]}>
+                  The final confidence score combines the AI model's certainty with the physical quality of the camera photo (sharpness, lighting, and framing).
+                </Text>
+
+                {label !== 'unidentified' && (
+                  <>
+                    <View style={[styles.divider, { marginVertical: 8 }]} />
+                    <Text style={[styles.expandableDetailText, { fontWeight: '800', marginBottom: 6 }]}>
+                      How the AI Thinks:
+                    </Text>
+                    <Text style={[styles.expandableDetailText, { fontWeight: '600', color: '#4F668F' }]}>
+                      {label === 'clubbing' && "The AI detected a bulbous nail tip with an increased Lovibond angle (greater than 180°), a strong structural indicator of nail clubbing."}
+                      {label === 'beau_lines' && "The AI detected significant horizontal physical ridges across the nail plate."}
+                      {label === 'muehrckes_lines' && "The AI detected paired, horizontal white lines that run parallel to the lunula."}
+                      {label === 'blue_finger' && "The AI analyzed the color gradient and detected an abnormally low Red-to-Blue light ratio (R/B < 0.95), indicating cyanosis."}
+                      {label === 'koilonychia' && "The AI detected a concave, spoon-like structural deformation."}
+                      {label === 'pitting' && "The AI detected multiple small, scattered depressions or physical pits on the nail surface."}
+                      {label === 'acral_lentiginous_melanoma' && "The AI detected a dark longitudinal pigmented band typical of subungual melanoma."}
+                      {label === 'healthy_nails' && "The AI detected smooth physical geometry and normal color gradients, with no structural anomalies."}
+                    </Text>
+                  </>
+                )}
+
+                {qualityFlags && qualityFlags.length > 0 && (
+                  <>
+                    <View style={styles.divider} />
+                    <Text style={[styles.expandableDetailText, { fontWeight: '800', marginBottom: 8 }]}>
+                      Your confidence score was lowered due to poor image quality:
+                    </Text>
+                    {qualityFlags.map((flag, i) => (
+                      <View key={i} style={{ flexDirection: 'row', marginBottom: 6, paddingRight: 10 }}>
+                        <Text style={[styles.expandableDetailText, { fontWeight: '900', marginRight: 6 }]}>•</Text>
+                        <Text style={[styles.expandableDetailText, { flex: 1 }]}>{flag}</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
+
+                {(!qualityFlags || qualityFlags.length === 0) && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Ionicons name="checkmark-circle" size={16} color="#159947" style={{ marginRight: 6 }} />
+                      <Text style={[styles.expandableDetailText, { marginBottom: 0, fontWeight: '700', color: '#159947' }]}>
+                        Excellent image quality detected.
+                      </Text>
+                    </View>
+                  </>
                 )}
               </GlassView>
             </Animated.View>
@@ -315,12 +405,12 @@ export function ResultView({
         <View style={styles.modalBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowDetectionModal(false)} />
           <Animated.View style={styles.modalWrapper}>
-            <GlassView 
-              style={styles.modalCard} 
-              intensity={95} 
-              borderRadius={28} 
-              backgroundColor="rgba(255, 255, 255, 0.9)" 
-              borderColor="rgba(255, 255, 255, 1)" 
+            <GlassView
+              style={styles.modalCard}
+              intensity={95}
+              borderRadius={28}
+              backgroundColor="rgba(255, 255, 255, 0.9)"
+              borderColor="rgba(255, 255, 255, 1)"
               borderWidth={2}
             >
               {/* Modal Header */}
@@ -343,13 +433,13 @@ export function ResultView({
               <View style={styles.modalImageWrapper}>
                 <View style={[styles.modalImageContainer, { width: displayWidth, height: displayHeight }]}>
                   {originalImageUri && (
-                    <Image 
-                      source={{ uri: originalImageUri }} 
-                      style={{ width: displayWidth, height: displayHeight, borderRadius: 16 }} 
-                      resizeMode="contain" 
+                    <Image
+                      source={{ uri: originalImageUri }}
+                      style={{ width: displayWidth, height: displayHeight, borderRadius: 16 }}
+                      resizeMode="contain"
                     />
                   )}
-                  
+
                   {/* Neon Bounding Box */}
                   <View style={boxStyle}>
                     {/* Top-Left Bracket */}
@@ -360,7 +450,7 @@ export function ResultView({
                     <View style={[styles.cornerBracket, { bottom: -2, left: -2, borderBottomWidth: 3, borderLeftWidth: 3 }]} />
                     {/* Bottom-Right Bracket */}
                     <View style={[styles.cornerBracket, { bottom: -2, right: -2, borderBottomWidth: 3, borderRightWidth: 3 }]} />
-                    
+
                     {/* Glowing AI Label */}
                     <View style={styles.boxLabel}>
                       <Ionicons name="scan" size={9} color="#00E5FF" style={{ marginRight: 3 }} />
