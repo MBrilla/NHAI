@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Image, ImageBackground, Platform, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { GlassView } from '@/components/nailscan/glass-view';
@@ -17,7 +17,15 @@ export default function CaptureScreen() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [imageSource, setImageSource] = useState<'camera' | 'upload'>('camera');
   const [flashEnabled, setFlashEnabled] = useState(false);
-  const [autoFocus, setAutoFocus] = useState<'on' | 'off'>('on');
+  const [selectedLens, setSelectedLens] = useState<string | undefined>(undefined);
+
+  const handleAvailableLensesChanged = useCallback((event: { lenses: string[] }) => {
+    // Ultra-wide lens enables macro focusing (~2cm minimum focus distance)
+    const ultraWide = event.lenses.find((lens) => lens.toLowerCase().includes('ultra wide'));
+    if (ultraWide && ultraWide !== selectedLens) {
+      setSelectedLens(ultraWide);
+    }
+  }, [selectedLens]);
 
   if (!permission) {
     return <View style={styles.container} />;
@@ -129,30 +137,6 @@ export default function CaptureScreen() {
             <Text style={styles.headerTitle}>Nail Capture</Text>
           </View>
 
-          {/* Tips Card */}
-          <GlassView
-            style={styles.tipsCard}
-            intensity={40}
-            borderRadius={20}
-            backgroundColor="rgba(255,255,255,0.62)"
-            borderColor="rgba(255,255,255,0.9)"
-            borderWidth={1.4}
-          >
-            <View style={styles.tipsHeader}>
-              <Ionicons name="sparkles" size={18} color="#086BFF" />
-              <Text style={styles.tipsTitle}>For better scan results:</Text>
-            </View>
-            <View style={styles.tipsRow}>
-              <TipItem icon="scan" label="Center\nthe nail" />
-              <View style={styles.tipsDivider} />
-              <TipItem icon="sunny-outline" label="Use even\nlighting" />
-              <View style={styles.tipsDivider} />
-              <TipItem icon="eye-outline" label="Keep nail\nclearly visible" />
-              <View style={styles.tipsDivider} />
-              <TipItem icon="hand-left-outline" label="Hold still for\n1 second" />
-            </View>
-          </GlassView>
-
           {/* Camera Preview */}
           <View style={[styles.previewContainer, !isTallScreen && { marginVertical: 6 }]}>
             <GlassView
@@ -169,14 +153,12 @@ export default function CaptureScreen() {
                     ref={cameraRef}
                     style={StyleSheet.absoluteFill}
                     enableTorch={flashEnabled}
-                    autofocus={autoFocus}
+                    autofocus="off"
+                    selectedLens={selectedLens}
+                    onAvailableLensesChanged={handleAvailableLensesChanged}
                   >
-                    <Pressable
+                    <View
                       style={styles.overlay}
-                      onPress={() => {
-                        setAutoFocus('off');
-                        setTimeout(() => setAutoFocus('on'), 100);
-                      }}
                     >
                       {/* Corner Guides */}
                       <CornerGuides />
@@ -201,7 +183,7 @@ export default function CaptureScreen() {
                           style={styles.flashIconShadow}
                         />
                       </Pressable>
-                    </Pressable>
+                    </View>
                   </CameraView>
                 ) : (
                   <View style={StyleSheet.absoluteFill}>
@@ -518,5 +500,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
-

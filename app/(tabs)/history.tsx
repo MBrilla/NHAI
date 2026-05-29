@@ -151,10 +151,12 @@ export default function HistoryScreen() {
               {diagnosis.label.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
             </Text>
             
+            {/* Commented out as requested:
             <View style={styles.infoLine}>
               <Ionicons name="shield-checkmark-outline" size={16} color="#006DFF" />
               <Text style={[styles.infoText, { color: '#006DFF' }]}>{(item.confidence * 100).toFixed(0)}% Confidence</Text>
             </View>
+            */}
 
             <View style={styles.infoLine}>
               <Ionicons name="calendar-outline" size={16} color="#64789A" />

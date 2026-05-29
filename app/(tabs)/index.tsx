@@ -1,10 +1,9 @@
+import { preloadTfliteModel } from '@/services/tflite-inference';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Image, ImageBackground, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { GlassView } from '@/components/nailscan/glass-view';
-import { preloadTfliteModel } from '@/services/tflite-inference';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -36,14 +35,14 @@ export default function HomeScreen() {
   };
 
   return (
-    <ImageBackground 
+    <ImageBackground
       source={require('@/assets/images/background.png')}
       style={styles.container}
       resizeMode="cover"
       imageStyle={{ opacity: 0.8 }}
     >
       <Animated.View style={[styles.safeArea, { opacity: fadeRef, transform: [{ translateY: slideRef }] }]}>
-        
+
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTextCol}>
@@ -53,25 +52,22 @@ export default function HomeScreen() {
               Scan your fingernail for fast AI-powered nail health screening.
             </Text>
           </View>
-          
-          <GlassView 
-            style={styles.logoBox} 
-            intensity={40} 
-            borderRadius={24} 
-            backgroundColor="rgba(255,255,255,0.44)" 
-            borderColor="rgba(255,255,255,0.75)"
-          >
-            <Image
-              source={require('@/assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-          </GlassView>
         </View>
 
         <View style={styles.spacer} />
 
-        {/* Feature Section */}
+        {/* Center Logo Container */}
+        <View style={styles.centerLogoContainer}>
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={styles.centerLogoImage}
+            resizeMode="contain"
+          />
+        </View>
+
+        <View style={styles.spacer} />
+
+        {/* Commented out as requested:
         <GlassView
           style={styles.featureCard}
           intensity={60}
@@ -99,11 +95,11 @@ export default function HomeScreen() {
             showDivider={false} 
           />
         </GlassView>
-
         <View style={styles.spacer} />
+        */}
 
         {/* Primary Button */}
-        <Pressable onPress={handleStartDiagnosis} style={({pressed}) => [styles.startButton, pressed && {opacity: 0.8}]}>
+        <Pressable onPress={handleStartDiagnosis} style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.8 }]}>
           <LinearGradient
             colors={['#3B82F6', '#0B5CFF', '#1D4ED8']}
             start={{ x: 0, y: 0.5 }}
@@ -199,6 +195,16 @@ const styles = StyleSheet.create({
   logoImage: {
     width: '100%',
     height: '100%',
+  },
+  centerLogoContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 20,
+  },
+  centerLogoImage: {
+    width: 300,
+    height: 300,
   },
   spacer: {
     flex: 1,

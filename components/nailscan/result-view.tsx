@@ -169,12 +169,14 @@ export function ResultView({
 
               <Text style={styles.dateText}>{dateStr}</Text>
 
+              {/* Commented out as requested:
               <Text style={styles.confLabel}>Confidence Score</Text>
               <Text style={styles.confScore}>{confPct}%</Text>
 
               <View style={styles.progressBarTrack}>
                 <View style={[styles.progressBarFill, { width: `${confPct}%` }]} />
               </View>
+              */}
             </View>
           </View>
           {hasROI && (

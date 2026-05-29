@@ -87,7 +87,10 @@ export default function AboutScreen() {
                 </View>
                 <View style={styles.stepRow}>
                   <StepNumber number={3} />
+                  <Text style={styles.stepText}>Result appears with analysis details</Text>
+                  {/* Commented out as requested:
                   <Text style={styles.stepText}>Result appears with confidence score</Text>
+                  */}
                 </View>
               </ExpandableTile>
 
